@@ -49,7 +49,7 @@ func (s *SQuery) Delete(table string, query interface{}) error {
 	if qs == "" {
 		return nil
 	}
-//	qs = " WHERE " + qs
+	//	qs = " WHERE " + qs
 	querystring := fmt.Sprintf("DELETE FROM %s %s", table , qs)
 	return s.session.Query(querystring, qp...).Exec()
 }
@@ -97,11 +97,23 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 	columns := make([]string, 0)
 	phs := make([]string, 0) // place holders
 	data := make([]interface{}, 0)
-	for k, v := range m {
-		columns = append(columns, k)
+	valueOf := reflect.ValueOf(p).Elem()
+	typeOf := reflect.TypeOf(p).Elem()
+	for i := 0; i < valueOf.NumField(); i++ {
+		vf := valueOf.Field(i)
+		tf := typeOf.Field(i)
+		jsonname := strings.Split(tf.Tag.Get("json"), ",")[0]
+		if jsonname == "-" {
+			continue
+		}
+		if reflect.DeepEqual(vf.Interface(), reflect.Zero(vf.Type()).Interface()) {
+			continue
+		}
+		columns = append(columns, jsonname)
 		phs = append(phs, "?")
-		data = append(data, v)
+		data = append(data, vf.Interface())
 	}
+
 	querystring := fmt.Sprintf("INSERT INTO %s(%s) VALUES (%s)", table, strings.Join(columns, ","), strings.Join(phs, ","))
 	return s.session.Query(querystring, data...).Exec()
 }
@@ -135,7 +147,7 @@ func (s *SQuery) Read(table string, p interface{}, query interface{}) error {
 	columns := make([]string, 0)
 	data := make([]interface{}, 0)
 	for i := 0; i < valueOf.NumField(); i++ {
-    vf := valueOf.Field(i)
+		vf := valueOf.Field(i)
 		tf := typeOf.Field(i)
 		jsonname := strings.Split(tf.Tag.Get("json"), ",")[0]
 		if jsonname == "-" {
@@ -245,7 +257,7 @@ func (s *SQuery) buildBatchQuery(query map[string]interface{}) (string, []interf
 }
 
 func (s *SQuery) ReadBatch(table string, p interface{}, query map[string]interface{}) error {
-		if reflect.TypeOf(p).Kind() != reflect.Ptr {
+	if reflect.TypeOf(p).Kind() != reflect.Ptr {
 		return errors.New("cassandra reflect error: p must be a pointer to array")
 	}
 
