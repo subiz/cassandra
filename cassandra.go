@@ -79,22 +79,13 @@ func (me *SQuery) CreateKeyspace(seeds []string, keyspace string, repfactor int)
 	}()
 
 	return defsession.Query(fmt.Sprintf(
-		`CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {
-			'class': 'SimpleStrategy',
-			'replication_factor': %d
-		}`, keyspace, repfactor)).Exec()
+	`CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {
+		'class': 'SimpleStrategy',
+		'replication_factor': %d
+	}`, keyspace, repfactor)).Exec()
 }
 
 func (s *SQuery) Upsert(table string, p interface{}) error {
-	var m map[string]interface{}
-	b, err := json.Marshal(p)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(b, &m); err != nil {
-		return err
-	}
-
 	columns := make([]string, 0)
 	phs := make([]string, 0) // place holders
 	data := make([]interface{}, 0)
