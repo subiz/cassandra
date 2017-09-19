@@ -129,7 +129,7 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 	return s.session.Query(querystring, data...).Exec()
 }
 
-func (s *SQuery)  buildQuery(query interface{}) (string, []interface{}, error) {
+func (s *SQuery) buildQuery(query interface{}) (string, []interface{}, error) {
 	var m map[string]interface{}
 	b, err := json.Marshal(query)
 	if err != nil {
@@ -153,76 +153,19 @@ func (s *SQuery)  buildQuery(query interface{}) (string, []interface{}, error) {
 }
 
 func (s *SQuery) Read(table string, p interface{}, query interface{}) error {
-	typeOf := reflect.TypeOf(p).Elem()
-	valueOf := reflect.ValueOf(p).Elem()
-	columns := make([]string, 0)
-	data := make([]interface{}, 0)
-
-	sfis := make(map[int]*[]byte) // struct fields indexs
-	sfises := make(map[int]*[][]byte) // slice of struct fields indexs
-	for i := 0; i < valueOf.NumField(); i++ {
-		vf := valueOf.Field(i)
-		tf := typeOf.Field(i)
-		jsonname := strings.Split(tf.Tag.Get("json"), ",")[0]
-		if jsonname == "-" {
-			continue
-		}
-		columns = append(columns, jsonname)
-		if vf.Type().Kind() == reflect.Slice && vf.Type().Elem().Kind() == reflect.Ptr {
-			var bs [][]byte
-			sfises[i] = &bs
-			data = append(data, &bs)
-		} else if vf.Type().Kind() == reflect.Ptr && vf.Type().Elem().Kind() == reflect.Struct {
-			var b []byte
-			sfis[i] = &b
-			data = append(data, &b)
-		} else {
-			data = append(data, vf.Addr().Interface())
-		}
-	}
-
+	valueOf := reflect.New(reflect.SliceOf(reflect.TypeOf(p))).Elem()
+	cols, findicies := s.analysisType(valueOf)
 	qs, qp, err := s.buildQuery(query)
+	querystring := fmt.Sprintf("SELECT %s FROM %s %s LIMIT 1", cols, table, qs)
+	err = s.alloc(valueOf, findicies, querystring, qp)
 	if err != nil {
 		return err
 	}
-	if qs == "" {
-		return nil
-	}
-	querystring := fmt.Sprintf("SELECT %s FROM %s %s LIMIT 1", strings.Join(columns, ","), table, qs)
-	err = s.session.Query(querystring, qp...).Scan(data...)
-	if err != nil {
-		return err
+	if valueOf.Len() == 0 {
+		return gocql.ErrNotFound
 	}
 
-	for k, v := range sfis {
-		if v == nil {
-			continue
-		}
-		vf := valueOf.Field(k)
-		pnewele := reflect.New(vf.Type().Elem())
-		err := proto.Unmarshal(*v, pnewele.Interface().(proto.Message))
-		if err != nil {
-			return err
-		}
-		vf.Set(pnewele)
-	}
-
-	for k, v := range sfises {
-		if v == nil {
-			continue
-		}
-		vf := valueOf.Field(k)
-
-		dest := reflect.MakeSlice(vf.Type(), 0, 0)
-		ss := reflect.MakeSlice(vf.Type(), 1, 1)
-		for _, b := range *v {
-			pnewele := reflect.New(vf.Type().Elem().Elem())
-			proto.Unmarshal(b, pnewele.Interface().(proto.Message))
-			ss.Index(0).Set(pnewele)
-			dest = reflect.AppendSlice(dest, ss)
-		}
-		vf.Set(dest)
-	}
+	reflect.ValueOf(p).Elem().Set(valueOf.Index(0).Elem())
 	return nil
 }
 
@@ -240,9 +183,10 @@ func (s *SQuery) buildMapQuery(query map[string]interface{}) (string, []interfac
 	return " WHERE " + qs, qp
 }
 
-func (s *SQuery) analysisType(p interface{}) (cols string, findices []int) {
+// p is pointer to array of pointer
+func (s *SQuery) analysisType(p reflect.Value) (cols string, findices []int) {
 	columns := make([]string, 0)
-	eleTypeOf := reflect.TypeOf(p).Elem().Elem().Elem()
+	eleTypeOf := p.Type().Elem().Elem()
 	validC := make([]int, 0)
 	for i := 0; i < eleTypeOf.NumField(); i++ {
 		tf := eleTypeOf.Field(i)
@@ -260,75 +204,12 @@ func (s *SQuery) List(table string, p interface{}, query map[string]interface{},
 	if reflect.TypeOf(p).Kind() != reflect.Ptr {
 		return errors.New("cassandra reflect error: p must be a pointer to array")
 	}
-
-	typeOf := reflect.TypeOf(p).Elem()
 	valueOf := reflect.ValueOf(p).Elem() // a slice
 
-	cols, findicies := s.analysisType(p)
+	cols, findicies := s.analysisType(valueOf)
 	qs, qp := s.buildMapQuery(query)
 	querystring := fmt.Sprintf("SELECT %s FROM %s %s LIMIT %v", cols, table, qs, limit)
-	iter := s.session.Query(querystring, qp...).Iter()
-	ps := reflect.MakeSlice(typeOf, 1, 1)
-	t := typeOf.Elem().Elem()
-	for {
-		pnewele := reflect.New(t)
-		data := make([]interface{}, 0, len(findicies))
-		sfis := make(map[int]*[]byte)
-		sfises := make(map[int]*[][]byte) // slice of struct fields indexs
-		for _, i := range findicies {
-			vf := pnewele.Elem().Field(i)
-
-			if vf.Type().Kind() == reflect.Slice && vf.Type().Elem().Kind() == reflect.Ptr {
-				var bs [][]byte
-				sfises[i] = &bs
-				data = append(data, &bs)
-			} else if vf.Type().Kind() == reflect.Ptr && vf.Type().Elem().Kind() == reflect.Struct {
-				var b []byte
-				sfis[i] = &b
-				data = append(data, &b)
-			} else {
-				data = append(data, vf.Addr().Interface())
-			}
-		}
-		if !iter.Scan(data...) {
-			break
-		}
-
-		for k, v := range sfis {
-			if v == nil {
-				continue
-			}
-			tf := valueOf.Type().Elem().Elem().Field(k)
-			pf := reflect.New(tf.Type.Elem())
-			err := proto.Unmarshal(*v, pf.Interface().(proto.Message))
-			if err != nil {
-				return err
-			}
-			pnewele.Elem().Field(k).Set(pf)
-		}
-
-		for k, v := range sfises {
-			if v == nil {
-				continue
-			}
-			vf := pnewele.Elem().Field(k)
-
-			dest := reflect.MakeSlice(vf.Type(), 0, 0)
-			ss := reflect.MakeSlice(vf.Type(), 1, 1)
-			for _, b := range *v {
-				pe := reflect.New(vf.Type().Elem().Elem())
-				proto.Unmarshal(b, pe.Interface().(proto.Message))
-				ss.Index(0).Set(pe)
-				dest = reflect.AppendSlice(dest, ss)
-			}
-			vf.Set(dest)
-		}
-
-		ps.Index(0).Set(pnewele)
-		valueOf = reflect.AppendSlice(valueOf, ps)
-	}
-	reflect.ValueOf(p).Elem().Set(valueOf)
-	return iter.Close()
+	return s.alloc(valueOf, findicies, querystring, qp)
 }
 
 func (s *SQuery) buildBatchQuery(query map[string]interface{}) (string, []interface{}) {
@@ -359,76 +240,95 @@ func (s *SQuery) buildBatchQuery(query map[string]interface{}) (string, []interf
 	return " WHERE " + qs, qp
 }
 
-func (s *SQuery) ReadBatch(table string, p interface{}, query map[string]interface{}) error {
-	if reflect.TypeOf(p).Kind() != reflect.Ptr {
-		return errors.New("cassandra reflect error: p must be a pointer to array")
-	}
-
-	typeOf := reflect.TypeOf(p).Elem()
-	valueOf := reflect.ValueOf(p).Elem() // a slice
-
-	cols, findicies := s.analysisType(p)
-	qs, qp := s.buildBatchQuery(query)
-	querystring := fmt.Sprintf("SELECT %s FROM %s %s", cols, table, qs)
+func (s *SQuery) alloc(v reflect.Value, findicies []int, querystring string, qp []interface{}) error {
+	val := v
 	iter := s.session.Query(querystring, qp...).Iter()
-	ps := reflect.MakeSlice(typeOf, 1, 1)
-	t := typeOf.Elem().Elem()
+	ps := reflect.MakeSlice(val.Type(), 1, 1)
+	t := val.Type().Elem().Elem()
 	for {
 		pnewele := reflect.New(t)
 		data := make([]interface{}, 0, len(findicies))
 		sfis := make(map[int]*[]byte)
 		sfises := make(map[int]*[][]byte) // slice of struct fields indexs
 		for _, i := range findicies {
-			vf := pnewele.Elem().Field(i)
-			if vf.Type().Kind() == reflect.Slice && vf.Type().Elem().Kind() == reflect.Ptr {
-				var bs [][]byte
-				sfises[i] = &bs
-				data = append(data, &bs)
-			} else if vf.Type().Kind() == reflect.Ptr && vf.Type().Elem().Kind() == reflect.Struct {
-				var b []byte
-				sfis[i] = &b
-				data = append(data, &b)
-			} else {
-				data = append(data, vf.Addr().Interface())
-			}
+			ele := buildPlaceHolder(i, pnewele.Elem(), sfis, sfises)
+			data = append(data, ele)
 		}
+
 		if !iter.Scan(data...) {
 			break
 		}
 
-		for k, v := range sfis {
-			if v == nil {
-				continue
-			}
-			tf := valueOf.Type().Elem().Elem().Field(k)
-			pf := reflect.New(tf.Type.Elem())
-			err := proto.Unmarshal(*v, pf.Interface().(proto.Message))
-			if err != nil {
-				return err
-			}
-			pnewele.Elem().Field(k).Set(pf)
-		}
-
-		for k, v := range sfises {
-			if v == nil {
-				continue
-			}
-			vf := pnewele.Elem().Field(k)
-
-			dest := reflect.MakeSlice(vf.Type(), 0, 0)
-			ss := reflect.MakeSlice(vf.Type(), 1, 1)
-			for _, b := range *v {
-				pe := reflect.New(vf.Type().Elem().Elem())
-				proto.Unmarshal(b, pe.Interface().(proto.Message))
-				ss.Index(0).Set(pe)
-				dest = reflect.AppendSlice(dest, ss)
-			}
-			vf.Set(dest)
-		}
-
+		marshalTo(pnewele.Elem(), sfis, sfises)
 		ps.Index(0).Set(pnewele)
-		valueOf = reflect.AppendSlice(valueOf, ps)
+		val = reflect.AppendSlice(val, ps)
 	}
-	reflect.ValueOf(p).Elem().Set(valueOf)
+	v.Set(val)
 	return iter.Close()
+}
+
+func (s *SQuery) ReadBatch(table string, p interface{}, query map[string]interface{}) error {
+	if reflect.TypeOf(p).Kind() != reflect.Ptr {
+		return errors.New("cassandra reflect error: p must be a pointer to array")
+	}
+	valueOf := reflect.ValueOf(p).Elem() // a slice
+	cols, findicies := s.analysisType(valueOf)
+	qs, qp := s.buildBatchQuery(query)
+	querystring := fmt.Sprintf("SELECT %s FROM %s %s", cols, table, qs)
+	return s.alloc(valueOf, findicies, querystring, qp)
+}
+
+func unmarshalPointerToStruct(b []byte, tf reflect.Type) (reflect.Value, error) {
+	pf := reflect.New(tf.Elem())
+	err := proto.Unmarshal(b, pf.Interface().(proto.Message))
+	if err != nil {
+		return reflect.Value{}, err
+	}
+	return pf, nil
+}
+
+func buildPlaceHolder(i int, f reflect.Value, sfis map[int]*[]byte, sfises map[int]*[][]byte) interface{} {
+	vf := f.Field(i)
+	if vf.Type().Kind() == reflect.Slice && vf.Type().Elem().Kind() == reflect.Ptr {
+		var bs [][]byte
+		sfises[i] = &bs
+		return &bs
+	} else if vf.Type().Kind() == reflect.Ptr && vf.Type().Elem().Kind() == reflect.Struct {
+		var b []byte
+		sfis[i] = &b
+		return &b
+	} else {
+		return vf.Addr().Interface()
+	}
+}
+
+func marshalTo(val reflect.Value, sfis map[int]*[]byte, sfises map[int]*[][]byte) error {
+	for k, v := range sfis {
+		if v == nil {
+			continue
+		}
+		pf, err := unmarshalPointerToStruct(*v, val.Field(k).Type())
+		if err != nil {
+			return err
+		}
+		val.Field(k).Set(pf)
+	}
+
+	for k, v := range sfises {
+		if v == nil {
+			continue
+		}
+		vf := val.Field(k)
+
+		dest := reflect.MakeSlice(vf.Type(), 0, 0)
+		ss := reflect.MakeSlice(vf.Type(), 1, 1)
+		for _, b := range *v {
+			pe := reflect.New(vf.Type().Elem().Elem())
+			proto.Unmarshal(b, pe.Interface().(proto.Message))
+			ss.Index(0).Set(pe)
+			dest = reflect.AppendSlice(dest, ss)
+		}
+		vf.Set(dest)
+	}
+	return nil
 }
