@@ -9,6 +9,7 @@ import (
 	"github.com/cenkalti/backoff"
 	"time"
 	"errors"
+	"github.com/golang/protobuf/proto"
 )
 
 type Query interface {
@@ -111,7 +112,26 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 		}
 		columns = append(columns, jsonname)
 		phs = append(phs, "?")
-		data = append(data, vf.Interface())
+
+		if vf.Type().Kind() == reflect.Slice && vf.Type().Elem().Kind() == reflect.Ptr {
+			bs := make([][]byte, 0, vf.Len())
+			for i := 0; i < vf.Len(); i++ {
+				b, err := proto.Marshal(vf.Index(i).Interface().(proto.Message))
+				if err != nil {
+					return err
+				}
+				bs = append(bs, b)
+			}
+			data = append(data, bs)
+		} else if vf.Type().Kind() == reflect.Ptr && vf.Type().Elem().Kind() == reflect.Struct {
+			b, err := proto.Marshal(vf.Interface().(proto.Message))
+			if err != nil {
+				return err
+			}
+			data = append(data, b)
+		} else {
+			data = append(data, vf.Interface())
+		}
 	}
 
 	querystring := fmt.Sprintf("INSERT INTO %s(%s) VALUES (%s)", table, strings.Join(columns, ","), strings.Join(phs, ","))
@@ -146,6 +166,9 @@ func (s *SQuery) Read(table string, p interface{}, query interface{}) error {
 	valueOf := reflect.ValueOf(p).Elem()
 	columns := make([]string, 0)
 	data := make([]interface{}, 0)
+
+	sfis := make(map[int]*[]byte) // struct fields indexs
+	sfises := make(map[int]*[][]byte) // slice of struct fields indexs
 	for i := 0; i < valueOf.NumField(); i++ {
 		vf := valueOf.Field(i)
 		tf := typeOf.Field(i)
@@ -154,7 +177,17 @@ func (s *SQuery) Read(table string, p interface{}, query interface{}) error {
 			continue
 		}
 		columns = append(columns, jsonname)
-		data = append(data, vf.Addr().Interface())
+		if vf.Type().Kind() == reflect.Slice && vf.Type().Elem().Kind() == reflect.Ptr {
+			var bs [][]byte
+			sfises[i] = &bs
+			data = append(data, &bs)
+		} else if vf.Type().Kind() == reflect.Ptr && vf.Type().Elem().Kind() == reflect.Struct {
+			var b []byte
+			sfis[i] = &b
+			data = append(data, &b)
+		} else {
+			data = append(data, vf.Addr().Interface())
+		}
 	}
 
 	qs, qp, err := s.buildQuery(query)
@@ -165,7 +198,41 @@ func (s *SQuery) Read(table string, p interface{}, query interface{}) error {
 		return nil
 	}
 	querystring := fmt.Sprintf("SELECT %s FROM %s %s LIMIT 1", strings.Join(columns, ","), table, qs)
-	return s.session.Query(querystring, qp...).Scan(data...)
+	err = s.session.Query(querystring, qp...).Scan(data...)
+	if err != nil {
+		return err
+	}
+
+	for k, v := range sfis {
+		if v == nil {
+			continue
+		}
+		vf := valueOf.Field(k)
+		pnewele := reflect.New(vf.Type().Elem())
+		err := proto.Unmarshal(*v, pnewele.Interface().(proto.Message))
+		if err != nil {
+			return err
+		}
+		vf.Set(pnewele)
+	}
+
+	for k, v := range sfises {
+		if v == nil {
+			continue
+		}
+		vf := valueOf.Field(k)
+
+		dest := reflect.MakeSlice(vf.Type(), 0, 0)
+		ss := reflect.MakeSlice(vf.Type(), 1, 1)
+		for _, b := range *v {
+			pnewele := reflect.New(vf.Type().Elem().Elem())
+			proto.Unmarshal(b, pnewele.Interface().(proto.Message))
+			ss.Index(0).Set(pnewele)
+			dest = reflect.AppendSlice(dest, ss)
+		}
+		vf.Set(dest)
+	}
+	return nil
 }
 
 func (s *SQuery) buildMapQuery(query map[string]interface{}) (string, []interface{}) {
@@ -215,12 +282,57 @@ func (s *SQuery) List(table string, p interface{}, query map[string]interface{},
 	for {
 		pnewele := reflect.New(t)
 		data := make([]interface{}, 0, len(findicies))
+		sfis := make(map[int]*[]byte)
+		sfises := make(map[int]*[][]byte) // slice of struct fields indexs
 		for _, i := range findicies {
-			data = append(data, pnewele.Elem().Field(i).Addr().Interface())
+			vf := pnewele.Elem().Field(i)
+
+			if vf.Type().Kind() == reflect.Slice && vf.Type().Elem().Kind() == reflect.Ptr {
+				var bs [][]byte
+				sfises[i] = &bs
+				data = append(data, &bs)
+			} else if vf.Type().Kind() == reflect.Ptr && vf.Type().Elem().Kind() == reflect.Struct {
+				var b []byte
+				sfis[i] = &b
+				data = append(data, &b)
+			} else {
+				data = append(data, vf.Addr().Interface())
+			}
 		}
 		if !iter.Scan(data...) {
 			break
 		}
+
+		for k, v := range sfis {
+			if v == nil {
+				continue
+			}
+			tf := valueOf.Type().Elem().Elem().Field(k)
+			pf := reflect.New(tf.Type.Elem())
+			err := proto.Unmarshal(*v, pf.Interface().(proto.Message))
+			if err != nil {
+				return err
+			}
+			pnewele.Elem().Field(k).Set(pf)
+		}
+
+		for k, v := range sfises {
+			if v == nil {
+				continue
+			}
+			vf := pnewele.Elem().Field(k)
+
+			dest := reflect.MakeSlice(vf.Type(), 0, 0)
+			ss := reflect.MakeSlice(vf.Type(), 1, 1)
+			for _, b := range *v {
+				pe := reflect.New(vf.Type().Elem().Elem())
+				proto.Unmarshal(b, pe.Interface().(proto.Message))
+				ss.Index(0).Set(pe)
+				dest = reflect.AppendSlice(dest, ss)
+			}
+			vf.Set(dest)
+		}
+
 		ps.Index(0).Set(pnewele)
 		valueOf = reflect.AppendSlice(valueOf, ps)
 	}
@@ -273,12 +385,56 @@ func (s *SQuery) ReadBatch(table string, p interface{}, query map[string]interfa
 	for {
 		pnewele := reflect.New(t)
 		data := make([]interface{}, 0, len(findicies))
+		sfis := make(map[int]*[]byte)
+		sfises := make(map[int]*[][]byte) // slice of struct fields indexs
 		for _, i := range findicies {
-			data = append(data, pnewele.Elem().Field(i).Addr().Interface())
+			vf := pnewele.Elem().Field(i)
+			if vf.Type().Kind() == reflect.Slice && vf.Type().Elem().Kind() == reflect.Ptr {
+				var bs [][]byte
+				sfises[i] = &bs
+				data = append(data, &bs)
+			} else if vf.Type().Kind() == reflect.Ptr && vf.Type().Elem().Kind() == reflect.Struct {
+				var b []byte
+				sfis[i] = &b
+				data = append(data, &b)
+			} else {
+				data = append(data, vf.Addr().Interface())
+			}
 		}
 		if !iter.Scan(data...) {
 			break
 		}
+
+			for k, v := range sfis {
+			if v == nil {
+				continue
+			}
+			tf := valueOf.Type().Elem().Elem().Field(k)
+			pf := reflect.New(tf.Type.Elem())
+			err := proto.Unmarshal(*v, pf.Interface().(proto.Message))
+			if err != nil {
+				return err
+			}
+			pnewele.Elem().Field(k).Set(pf)
+		}
+
+		for k, v := range sfises {
+			if v == nil {
+				continue
+			}
+			vf := pnewele.Elem().Field(k)
+
+			dest := reflect.MakeSlice(vf.Type(), 0, 0)
+			ss := reflect.MakeSlice(vf.Type(), 1, 1)
+			for _, b := range *v {
+				pe := reflect.New(vf.Type().Elem().Elem())
+				proto.Unmarshal(b, pe.Interface().(proto.Message))
+				ss.Index(0).Set(pe)
+				dest = reflect.AppendSlice(dest, ss)
+			}
+			vf.Set(dest)
+		}
+
 		ps.Index(0).Set(pnewele)
 		valueOf = reflect.AppendSlice(valueOf, ps)
 	}
