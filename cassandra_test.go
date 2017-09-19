@@ -83,7 +83,15 @@ func TestRuleCrud(t *testing.T) {
 		rule.GetCtx().GetEventId() != "cool" {
 		t.Fatal("wrong storing")
 	}
-
+	func() {
+		defer func() {
+			r := recover()
+			if r == nil {
+				t.Fatal("should panic")
+			}
+		}()
+		ruledb.Read(accid, id3)
+	}()
 	ruledb.Upsert(&pb.Rule{
 		Id: &id2,
 		AccountId: &accid,
