@@ -405,7 +405,7 @@ func (s *SQuery) ReadBatch(table string, p interface{}, query map[string]interfa
 			break
 		}
 
-			for k, v := range sfis {
+		for k, v := range sfis {
 			if v == nil {
 				continue
 			}
