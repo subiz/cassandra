@@ -22,7 +22,6 @@ func TestMain(m *testing.M) {
 func TestRuleCrud(t *testing.T) {
 	id1, id2, id3 := ID.NewRuleID(), ID.NewRuleID(), ID.NewRuleID()
 	accid := ID.NewAccountID()
-
 	st := pb.AssignStrategy_ROUNDROBINAGENTS
 	ruledb.Upsert(&pb.Rule{
 		Id: &id1,
@@ -71,7 +70,11 @@ func TestRuleCrud(t *testing.T) {
 	if len(rules) != 2 {
 		t.Fatalf("len should be 2, actual %d", len(rules))
 	}
+
 	rule := rules[1]
+	if rule.GetId() != id2 {
+		rule = rules[0]
+	}
 	if rule.GetId() != id2 ||
 		rule.GetAccountId() != accid ||
 		rule.GetStrategy() != pb.AssignStrategy_ROUNDROBINAGENTS ||
