@@ -3,11 +3,11 @@ package cassandra_test
 import (
 	"testing"
 	. "bitbucket.org/subiz/conversation/db"
-	pb "bitbucket.org/subiz/servicespec/proto/conversation"
+	pb "bitbucket.org/subiz/header/conversation"
 	"github.com/thanhpk/goslice"
 	"bitbucket.org/subiz/gocommon"
 	"bitbucket.org/subiz/id"
-	commonpb "bitbucket.org/subiz/servicespec/proto/common"
+	commonpb "bitbucket.org/subiz/header/common"
 )
 
 var ruledb *RuleDB
@@ -66,6 +66,7 @@ func TestRuleCrud(t *testing.T) {
 	}
 
 	ruledb.Delete(accid, id3)
+
 	rules := ruledb.List(accid)
 	if len(rules) != 2 {
 		t.Fatalf("len should be 2, actual %d", len(rules))
