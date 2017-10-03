@@ -118,8 +118,14 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 	columns := make([]string, 0)
 	phs := make([]string, 0) // place holders
 	data := make([]interface{}, 0)
-	valueOf := reflect.ValueOf(p).Elem()
-	typeOf := reflect.TypeOf(p).Elem()
+
+	var valueOf reflect.Value
+	var typeOf reflect.Type
+	if reflect.TypeOf(p).Kind() == reflect.Ptr {
+		valueOf, typeOf = reflect.ValueOf(p).Elem(), reflect.TypeOf(p).Elem()
+	} else {
+		valueOf, typeOf = reflect.ValueOf(p), reflect.TypeOf(p)
+	}
 	for i := 0; i < valueOf.NumField(); i++ {
 		vf := valueOf.Field(i)
 		tf := typeOf.Field(i)
