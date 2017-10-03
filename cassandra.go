@@ -9,7 +9,9 @@ import (
 	"github.com/cenkalti/backoff"
 	"time"
 	"errors"
+	"github.com/orcaman/concurrent-map"
 	"github.com/golang/protobuf/proto"
+	"github.com/thanhpk/goslice"
 )
 
 type Query interface {
@@ -20,18 +22,45 @@ type Query interface {
 	CreateKeyspace(seeds []string, keyspace string, repfactor int) error
 	List(table string, p interface{}, query map[string]interface{}, limit int) error
 	ReadBatch(table string, p interface{}, query map[string]interface{}) error
+	CreateTable(table, query string, option ...string) error
 }
 
 func NewQuery() *SQuery {
-	return &SQuery{}
+	return &SQuery{
+		table: cmap.New(),
+	}
 }
 
 type SQuery struct {
 	session *gocql.Session
+	table cmap.ConcurrentMap
 }
 
 func (s *SQuery) GetSession() *gocql.Session {
 	return s.session
+}
+
+func (s *SQuery) extractFields(query string) []string {
+	fs := make([]string, 0)
+	columns := strings.Split(query, "\n")
+	for _, col := range columns {
+		colSplit := strings.Split(col, " ")
+		f := colSplit[0]
+		if f == "PRIMARY" || f == "" {
+			continue
+		}
+		fs = append(fs, )
+	}
+	return fs
+}
+
+func (s *SQuery) CreateTable(table string, query string, option ...string) error {
+	var o string
+	if len(option) > 0 {
+		o = option[0]
+	}
+	s.table.Set(table, s.extractFields(query))
+	return s.session.Query(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (%s)%s`, table, query, o)).Exec()
 }
 
 func (s *SQuery) Delete(table string, query interface{}) error {
@@ -94,10 +123,18 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 	for i := 0; i < valueOf.NumField(); i++ {
 		vf := valueOf.Field(i)
 		tf := typeOf.Field(i)
+
 		jsonname := strings.Split(tf.Tag.Get("json"), ",")[0]
 		if jsonname == "-" {
 			continue
 		}
+		// only consider field which defined in table
+		if tbfields, ok := s.table.Get(table); ok {
+			if !slice.ContainString(tbfields.([]string), jsonname) {
+				continue
+			}
+		}
+
 		if reflect.DeepEqual(vf.Interface(), reflect.Zero(vf.Type()).Interface()) {
 			continue
 		}
@@ -154,7 +191,7 @@ func (s *SQuery) buildQuery(query interface{}) (string, []interface{}, error) {
 
 func (s *SQuery) Read(table string, p interface{}, query interface{}) error {
 	valueOf := reflect.New(reflect.SliceOf(reflect.TypeOf(p))).Elem()
-	cols, findicies := s.analysisType(valueOf)
+	cols, findicies := s.analysisType(table, valueOf)
 	qs, qp, err := s.buildQuery(query)
 	querystring := fmt.Sprintf("SELECT %s FROM %s %s LIMIT 1", cols, table, qs)
 	err = s.alloc(valueOf, findicies, querystring, qp)
@@ -184,7 +221,7 @@ func (s *SQuery) buildMapQuery(query map[string]interface{}) (string, []interfac
 }
 
 // p is pointer to array of pointer
-func (s *SQuery) analysisType(p reflect.Value) (cols string, findices []int) {
+func (s *SQuery) analysisType(table string, p reflect.Value) (cols string, findices []int) {
 	columns := make([]string, 0)
 	eleTypeOf := p.Type().Elem().Elem()
 	validC := make([]int, 0)
@@ -193,6 +230,12 @@ func (s *SQuery) analysisType(p reflect.Value) (cols string, findices []int) {
 		jsonname := strings.Split(tf.Tag.Get("json"), ",")[0]
 		if jsonname == "-" {
 			continue
+		}
+		// only consider column which is defined in table
+		if tbfields, ok := s.table.Get(table); ok {
+			if !slice.ContainString(tbfields.([]string), jsonname) {
+				continue
+			}
 		}
 		validC = append(validC, i)
 		columns = append(columns, jsonname)
@@ -206,7 +249,7 @@ func (s *SQuery) List(table string, p interface{}, query map[string]interface{},
 	}
 	valueOf := reflect.ValueOf(p).Elem() // a slice
 
-	cols, findicies := s.analysisType(valueOf)
+	cols, findicies := s.analysisType(table, valueOf)
 	qs, qp := s.buildMapQuery(query)
 	querystring := fmt.Sprintf("SELECT %s FROM %s %s LIMIT %v", cols, table, qs, limit)
 	return s.alloc(valueOf, findicies, querystring, qp)
@@ -241,7 +284,7 @@ func (s *SQuery) buildBatchQuery(query map[string]interface{}) (string, []interf
 }
 
 func (s *SQuery) alloc(v reflect.Value, findicies []int, querystring string, qp []interface{}) error {
-	val := v
+	val := v//reflect.MakeSlice(v.Type(), 0, 1)
 	iter := s.session.Query(querystring, qp...).Iter()
 	ps := reflect.MakeSlice(val.Type(), 1, 1)
 	t := val.Type().Elem().Elem()
@@ -272,7 +315,7 @@ func (s *SQuery) ReadBatch(table string, p interface{}, query map[string]interfa
 		return errors.New("cassandra reflect error: p must be a pointer to array")
 	}
 	valueOf := reflect.ValueOf(p).Elem() // a slice
-	cols, findicies := s.analysisType(valueOf)
+	cols, findicies := s.analysisType(table, valueOf)
 	qs, qp := s.buildBatchQuery(query)
 	querystring := fmt.Sprintf("SELECT %s FROM %s %s", cols, table, qs)
 	return s.alloc(valueOf, findicies, querystring, qp)
