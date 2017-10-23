@@ -45,11 +45,11 @@ func (s *SQuery) extractFields(query string) []string {
 	columns := strings.Split(query, "\n")
 	for _, col := range columns {
 		colSplit := strings.Split(col, " ")
-		f := colSplit[0]
+		f := strings.Trim(strings.Trim(colSplit[0], "	"), " ")
 		if f == "PRIMARY" || f == "" {
 			continue
 		}
-		fs = append(fs, )
+		fs = append(fs, f)
 	}
 	return fs
 }
@@ -134,6 +134,7 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 		if jsonname == "-" {
 			continue
 		}
+
 		// only consider field which defined in table
 		if tbfields, ok := s.table.Get(table); ok {
 			if !slice.ContainString(tbfields.([]string), jsonname) {
