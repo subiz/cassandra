@@ -1,13 +1,15 @@
+// +build ignore
+
 package cassandra_test
 
 import (
-	"testing"
-	. "bitbucket.org/subiz/conversation/db"
-	pb "bitbucket.org/subiz/header/conversation"
-	"github.com/thanhpk/goslice"
-	"bitbucket.org/subiz/gocommon"
-	"bitbucket.org/subiz/id"
-	commonpb "bitbucket.org/subiz/header/common"
+//	"testing"
+//	. "bitbucket.org/subiz/conversation/db"
+//	pb "bitbucket.org/subiz/header/conversation"
+//	"github.com/thanhpk/goslice"
+//	"bitbucket.org/subiz/gocommon"
+//	"bitbucket.org/subiz/id"
+//	commonpb "bitbucket.org/subiz/header/common"
 )
 
 var ruledb *RuleDB
