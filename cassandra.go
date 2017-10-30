@@ -23,6 +23,9 @@ type Query interface {
 	List(table string, p interface{}, query map[string]interface{}, limit int) error
 	ReadBatch(table string, p interface{}, query map[string]interface{}) error
 	CreateTable(table, query string, option ...string) error
+
+	DropTable(table string) error
+
 }
 
 func NewQuery() *SQuery {
@@ -96,7 +99,7 @@ func (me *SQuery) CreateKeyspace(seeds []string, keyspace string, repfactor int)
 			ticker.Stop()
 			break
 		}
-		//common.Log(err, "will retry...")
+		fmt.Println("cassandra", err, ". Retring...")
 	}
 	if err != nil {
 		return err
@@ -288,6 +291,11 @@ func (s *SQuery) buildBatchQuery(query map[string]interface{}) (string, []interf
 		return "", nil
 	}
 	return " WHERE " + qs, qp
+}
+
+func (s *SQuery) DropTable(table string) error {
+	querystring := "DROP TABLE IF EXISTS " + table
+	return s.session.Query(querystring).Exec()
 }
 
 func (s *SQuery) alloc(v reflect.Value, findicies []int, querystring string, qp []interface{}) error {
