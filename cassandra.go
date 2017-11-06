@@ -35,6 +35,7 @@ func NewQuery() *SQuery {
 }
 
 type SQuery struct {
+	keyspace string
 	session *gocql.Session
 	table cmap.ConcurrentMap
 }
@@ -52,6 +53,7 @@ func (s *SQuery) extractFields(query string) []string {
 		if f == "PRIMARY" || f == "" {
 			continue
 		}
+
 		fs = append(fs, f)
 	}
 	return fs
@@ -63,6 +65,7 @@ func (s *SQuery) CreateTable(table string, query string, option ...string) error
 		o = option[0]
 	}
 	s.table.Set(table, s.extractFields(query))
+
 	return s.session.Query(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (%s)%s`, table, query, o)).Exec()
 }
 
@@ -88,6 +91,7 @@ func (s *SQuery) Delete(table string, query interface{}) error {
 }
 
 func (me *SQuery) CreateKeyspace(seeds []string, keyspace string, repfactor int) (err error) {
+	me.keyspace = keyspace
 	cluster := gocql.NewCluster(seeds...)
 	cluster.Timeout = 10 * time.Second
 	cluster.Keyspace = "system"
@@ -148,6 +152,10 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 		if reflect.DeepEqual(vf.Interface(), reflect.Zero(vf.Type()).Interface()) {
 			continue
 		}
+
+		if isReservedKeyword(jsonname) {
+			jsonname = "`" + jsonname + "`"
+		}
 		columns = append(columns, jsonname)
 		phs = append(phs, "?")
 
@@ -176,6 +184,13 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 	return s.session.Query(querystring, data...).Exec()
 }
 
+func isReservedKeyword(key string) bool {
+	if key == "by" {
+		return true
+	}
+	return false
+}
+
 func (s *SQuery) buildQuery(query interface{}) (string, []interface{}, error) {
 	var m map[string]interface{}
 	b, err := json.Marshal(query)
@@ -187,9 +202,13 @@ func (s *SQuery) buildQuery(query interface{}) (string, []interface{}, error) {
 	}
 
 	q := make([]string, 0, len(m)) // query
-	qp := make([]interface{}, 0, len(m))
+	qp := make([]interface{}, 0, len(m)) // query parameter
 	for k, v := range m {
-		q = append(q, k + "=?")
+		nk := k
+		if isReservedKeyword(k) {
+			nk = "`" + k + "`"
+		}
+		q = append(q, nk + "=?")
 		qp = append(qp, v)
 	}
 	qs := strings.Join(q, " AND ")
@@ -218,10 +237,9 @@ func (s *SQuery) Read(table string, p interface{}, query interface{}) error {
 
 func (s *SQuery) buildMapQuery(query map[string]interface{}) (string, []interface{}) {
 	q := make([]string, 0, len(query)) // query
-	qp := make([]interface{}, 0, len(query))
+	qp := make([]interface{}, 0, len(query)) // query parameter
 	for k, v := range query {
-		q = append(q, k + "?")
-		qp = append(qp, v)
+		q, qp = append(q, k + "?"), append(qp, v)
 	}
 	qs := strings.Join(q, " AND ")
 	if qs == "" {
@@ -246,6 +264,9 @@ func (s *SQuery) analysisType(table string, p reflect.Value) (cols string, findi
 			if !slice.ContainString(tbfields.([]string), jsonname) {
 				continue
 			}
+		}
+		if isReservedKeyword(jsonname) {
+			jsonname = "`" + jsonname + "`"
 		}
 		validC = append(validC, i)
 		columns = append(columns, jsonname)
@@ -293,7 +314,12 @@ func (s *SQuery) buildBatchQuery(query map[string]interface{}) (string, []interf
 	return " WHERE " + qs, qp
 }
 
-func (s *SQuery) DropTable(table string) error {
+func (s SQuery) DropKeyspace() error {
+	querystring := "DROP KEYSPACE IF EXISTS " + s.keyspace
+	return s.session.Query(querystring).Exec()
+}
+
+func (s SQuery) DropTable(table string) error {
 	querystring := "DROP TABLE IF EXISTS " + table
 	return s.session.Query(querystring).Exec()
 }

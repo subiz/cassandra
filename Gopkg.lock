@@ -11,7 +11,7 @@
   branch = "master"
   name = "github.com/gocql/gocql"
   packages = [".","internal/lru","internal/murmur","internal/streams"]
-  revision = "f5cee644705e9593c342bfabe667720580a5289f"
+  revision = "79434f238fe5c76efa88f8ed131adefe5b31a0d1"
 
 [[projects]]
   branch = "master"
@@ -53,7 +53,7 @@
   branch = "master"
   name = "golang.org/x/net"
   packages = ["context"]
-  revision = "c73622c77280266305273cb545f54516ced95b93"
+  revision = "01c190206fbdffa42f334f4b2bf2220f50e64920"
 
 [[projects]]
   name = "gopkg.in/inf.v0"
