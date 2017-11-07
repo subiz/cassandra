@@ -154,7 +154,7 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 		}
 
 		if isReservedKeyword(jsonname) {
-			jsonname = "`" + jsonname + "`"
+			jsonname = "\"" + jsonname + "\""
 		}
 		columns = append(columns, jsonname)
 		phs = append(phs, "?")
@@ -206,7 +206,7 @@ func (s *SQuery) buildQuery(query interface{}) (string, []interface{}, error) {
 	for k, v := range m {
 		nk := k
 		if isReservedKeyword(k) {
-			nk = "`" + k + "`"
+			nk = "\"" + k + "\""
 		}
 		q = append(q, nk + "=?")
 		qp = append(qp, v)
@@ -266,7 +266,7 @@ func (s *SQuery) analysisType(table string, p reflect.Value) (cols string, findi
 			}
 		}
 		if isReservedKeyword(jsonname) {
-			jsonname = "`" + jsonname + "`"
+			jsonname = "\"" + jsonname + "\""
 		}
 		validC = append(validC, i)
 		columns = append(columns, jsonname)
