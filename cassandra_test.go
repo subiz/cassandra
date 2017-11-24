@@ -1,113 +1,112 @@
-// +build ignore
-
 package cassandra_test
 
 import (
-//	"testing"
-//	. "bitbucket.org/subiz/conversation/db"
-//	pb "bitbucket.org/subiz/header/conversation"
-//	"github.com/thanhpk/goslice"
-//	"bitbucket.org/subiz/gocommon"
-//	"bitbucket.org/subiz/id"
-//	commonpb "bitbucket.org/subiz/header/common"
+	"testing"
+	"strconv"
+	"time"
+	. "bitbucket.org/subiz/cassandra"
 )
 
-var ruledb *RuleDB
-
-func TestMain(m *testing.M) {
-	seed := common.StartCassandraDev("")
-	ruledb = &RuleDB{}
-	ruledb.Config([]string{seed}, "casstest", 1)
-	m.Run()
+func toString(i int) string {
+	N := 10
+	s := strconv.Itoa(i)
+	if len(s) > N {
+		panic("should increase N")
+	}
+	for i := 0; i < N; i++ {
+		if len(s) == N {
+			break
+		}
+		s = "0" + s
+	}
+	return s
 }
 
-func TestRuleCrud(t *testing.T) {
-	id1, id2, id3 := ID.NewRuleID(), ID.NewRuleID(), ID.NewRuleID()
-	accid := ID.NewAccountID()
-	st := pb.AssignStrategy_ROUNDROBINAGENTS
-	ruledb.Upsert(&pb.Rule{
-		Id: &id1,
-		AccountId: &accid,
-		PrevId: &id2,
-		Strategy: &st,
-		AssignTos: []string{ "agent1", "agent2", "agent3" },
-		Conditions: []*pb.Condition{
-			&pb.Condition{
-				Key: common.AmpS("user.name"),
-				Operator: common.AmpS("eq"),
-				Value: common.AmpS("thanh"),
-			},
-		},
+func toString64(i int64) string {
+	return toString(int(i))
+}
+
+var db ICassandra
+
+type User struct {
+	account, id, email string
+	updated int64
+}
+
+func TestMockView(t *testing.T) {
+	db := NewCassandraFake(2, func(obj interface{}) []string {
+		u := obj.(*User)
+		return []string{toString(int(u.updated)), u.id, u.email}
 	})
-	ruledb.Upsert(&pb.Rule{
-		Ctx: &commonpb.Context{
-			EventId: common.AmpS("cool"),
-		},
-		Id: &id2,
-		AccountId: &accid,
-		NextId: &id1,
-		PrevId: &id3,
-		Strategy: &st,
-		AssignTos: []string{ "agent1", "agent2", "agent3" },
-		Conditions: []*pb.Condition{
-			&pb.Condition{
-				Key: common.AmpS("user.email"),
-				Operator: common.AmpS("superset"),
-				Value: common.AmpS("[\"thanhpk@live.com\"]"),
-			},
-		},
-	})
-	ruledb.Upsert(&pb.Rule{
-		NextId: &id2,
-		Id: &id3,
-		AccountId: &accid,
+	now := time.Now().Unix()
+	for i := 0; i < 100; i++ {
+		u := &User{"1", toString(i % 30), toString(i) + "@thanh.cf", now + int64(i) % 20}
+		db.Upsert(u, u.account, u.id, u.email)
+	}
+
+	ti := time.Now().Unix() + 100
+	oser := db.ListInView("1", false, 60, func(obj interface{}) bool {
+		u := obj.(*User)
+		return u.updated <= ti
 	})
 
-	if 3 != ruledb.Count(accid) {
-		t.Fatalf("should be 3")
+	if len(oser) != 60 {
+		t.Fatalf("should be 60, got %d", len(oser))
+	}
+	last := oser[len(oser) - 1].(*User)
+	ti = last.updated
+	oser = db.ListInView("1", false, 60, func(obj interface{}) bool {
+		u := obj.(*User)
+		if u.updated <= ti {
+		}
+		return u.updated <= ti
+	})
+
+	if len(oser) != 45 {
+		t.Fatalf("should be 45, got %d", len(oser))
+	}
+}
+
+func TestMock(t *testing.T) {
+	db := NewCassandraFake(2, func(obj interface{}) []string {
+		u := obj.(*User)
+		return []string{toString(int(u.updated)), u.id, u.email}
+	})
+
+	now := time.Now().Unix()
+	for i := 0; i < 100; i++ {
+		u := &User{"1", toString(i % 30), toString(i) + "@thanh.cf", now + int64(i) % 30}
+		db.Upsert(u, u.account, u.id, u.email)
 	}
 
-	ruledb.Delete(accid, id3)
-
-	rules := ruledb.List(accid)
-	if len(rules) != 2 {
-		t.Fatalf("len should be 2, actual %d", len(rules))
+	o := db.Read("1", toString(1), toString(1) + "@thanh.cf")
+	u := o.(*User)
+	if u.account != "1" || u.id != toString(1) || u.email != toString(1) + "@thanh.cf" {
+		t.Fatal("should equal")
 	}
 
-	rule := rules[1]
-	if rule.GetId() != id2 {
-		rule = rules[0]
+	for i := 0; i < 100; i++ {
+		db.Delete("1", toString(0), toString(i) + "@thanh.cf")
 	}
-	if rule.GetId() != id2 ||
-		rule.GetAccountId() != accid ||
-		rule.GetStrategy() != pb.AssignStrategy_ROUNDROBINAGENTS ||
-		!slice.Equal(rule.AssignTos, []string{ "agent1", "agent2", "agent3" }) ||
-		rule.GetConditions()[0].GetKey() != "user.email" ||
-		rule.GetCtx().GetEventId() != "cool" {
-		t.Fatal("wrong storing")
-	}
-	func() {
-		defer func() {
-			r := recover()
-			if r == nil {
-				t.Fatal("should panic")
+
+	osers := db.List("1", true, 5, func(obj interface{}) bool {
+		return true
+	})
+
+	for i, o := range osers {
+		u := o.(*User)
+		if u.account != "1" {
+			t.Fatalf("should be 1, got %d", u.account)
+		}
+		if i == 4 {
+			if u.id != toString(2) || u.email != toString(2) + "@thanh.cf" {
+				t.Fatalf("should equal, got %s, %s", u.id, u.email)
 			}
-		}()
-		ruledb.Read(accid, id3)
-	}()
-	ruledb.Upsert(&pb.Rule{
-		Id: &id2,
-		AccountId: &accid,
-		AssignTos: []string{ "agent1", "agent2" },
-	})
+			continue
+		}
 
-	rule = ruledb.Read(accid, id2)
-	if rule.GetId() != id2 ||
-		rule.GetAccountId() != accid ||
-		rule.GetStrategy() != pb.AssignStrategy_ROUNDROBINAGENTS ||
-		!slice.Equal(rule.AssignTos, []string{ "agent1", "agent2" }) ||
-		rule.GetConditions()[0].GetKey() != "user.email" ||
-		rule.GetCtx().GetEventId() != "cool" {
-		t.Fatal("wrong storing")
+		if u.id != toString(1) {
+			t.Fatalf("should equal, got %s", u.id)
+		}
 	}
 }
