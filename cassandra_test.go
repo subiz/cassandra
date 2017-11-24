@@ -34,7 +34,7 @@ type User struct {
 }
 
 func TestMockView(t *testing.T) {
-	db := NewCassandraFake(2, func(obj interface{}) []string {
+	db = NewCassandraFake(2, func(obj interface{}) []string {
 		u := obj.(*User)
 		return []string{toString(int(u.updated)), u.id, u.email}
 	})
@@ -68,7 +68,7 @@ func TestMockView(t *testing.T) {
 }
 
 func TestMock(t *testing.T) {
-	db := NewCassandraFake(2, func(obj interface{}) []string {
+	db = NewCassandraFake(2, func(obj interface{}) []string {
 		u := obj.(*User)
 		return []string{toString(int(u.updated)), u.id, u.email}
 	})

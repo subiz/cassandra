@@ -14,6 +14,14 @@ import (
 	"github.com/thanhpk/goslice"
 )
 
+type ICassandra interface {
+	Read(partition string, cluster ...string) interface{}
+	List(partition string, asc bool, limit int, condf func(obj interface{}) bool) []interface{}
+	ListInView(partition string, asc bool, limit int, condf func(obj interface{}) bool) []interface{}
+	Upsert(o interface{}, partition string, cluster ...string)
+	Delete(partition string, clustering ...string)
+}
+
 type Query interface {
 	GetSession() *gocql.Session
 	Delete(table string, query interface{}) error

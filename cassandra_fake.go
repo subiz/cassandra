@@ -103,15 +103,6 @@ type CassandraFake struct {
 	view map[string]*MyDB
 }
 
-type ICassandra interface {
-	New(nclustering int, viewmapf func(obj interface{})[]string)
-	Read(partition string, cluster ...string) interface{}
-	List(partition string, asc bool, limit int, condf func(obj interface{}) bool) []interface{}
-	ListInView(partition, asc bool, limit int, condf func(obj interface{}) bool) []interface{}
-	Upsert(o interface{}, partition string, cluster ...string)
-	Delete(partition string, clustering ...string)
-}
-
 func NewCassandraFake(nclustering int, viewmapf func(obj interface{})[]string) *CassandraFake {
 	f := &CassandraFake{}
 	f.nclustering = nclustering
