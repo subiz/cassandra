@@ -129,8 +129,14 @@ func (f *CassandraFake) Upsert(obj interface{}, partition string, clustering ...
 	}
 
 	view := f.view[partition]
-	view.Set(obj, f.viewmapf(obj)...)
 
+	// remove old object if exists
+	o := db.Get(clustering...)
+	if o != nil {
+		view.Delete(f.viewmapf(o)...)
+	}
+
+	view.Set(obj, f.viewmapf(obj)...)
 	db.Set(obj, clustering...)
 }
 

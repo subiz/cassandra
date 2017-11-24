@@ -110,3 +110,21 @@ func TestMock(t *testing.T) {
 		}
 	}
 }
+
+func TestUpdateView(t *testing.T) {
+	db = NewCassandraFake(1, func(obj interface{}) []string {
+		u := obj.(*User)
+		return []string{u.email, u.id}
+	})
+
+	u := &User{"1", "sen", "sen@thanh.cf", 1}
+	db.Upsert(u, u.account, u.id)
+	u = &User{"1", "sen", "thanh@sen.cf", 2}
+	db.Upsert(u, u.account, u.id)
+	out := db.ListInView("1", true, 10, func(o interface{}) bool {
+		return true
+	})
+	if len(out) != 1 {
+		t.Fatalf("should be 1, got %d", len(out))
+	}
+}
