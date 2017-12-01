@@ -33,7 +33,7 @@ type Query interface {
 	CreateTable(table, query string, option ...string) error
 
 	DropTable(table string) error
-
+	DropView(view string) error
 }
 
 func NewQuery() *SQuery {
@@ -324,6 +324,11 @@ func (s *SQuery) buildBatchQuery(query map[string]interface{}) (string, []interf
 
 func (s SQuery) DropKeyspace() error {
 	querystring := "DROP KEYSPACE IF EXISTS " + s.keyspace
+	return s.session.Query(querystring).Exec()
+}
+
+func (s SQuery) DropView(view string) error {
+	querystring := "DROP MATERIALIZED VIEW IF EXISTS " + view
 	return s.session.Query(querystring).Exec()
 }
 
