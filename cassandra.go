@@ -288,9 +288,25 @@ func (s *SQuery) List(table string, p interface{}, query map[string]interface{},
 	}
 	valueOf := reflect.ValueOf(p).Elem() // a slice
 
+	if limit == 0 {
+		limit = 20
+	} else if limit < 0 {
+		limit = -limit
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	orderby := ""
+	if query["order by"] != nil {
+		orderby = "ORDER BY " + query["order by"].(string)
+		delete(query, "order by")
+	}
+
 	cols, findicies := s.analysisType(table, valueOf)
 	qs, qp := s.buildMapQuery(query)
-	querystring := fmt.Sprintf("SELECT %s FROM %s %s LIMIT %v", cols, table, qs, limit)
+
+	querystring := fmt.Sprintf("SELECT %s FROM %s %s %s LIMIT %v", cols, table, qs, orderby, limit)
 	return s.alloc(valueOf, findicies, querystring, qp)
 }
 
