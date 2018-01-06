@@ -43,4 +43,4 @@
 
 [[constraint]]
   name = "github.com/thanhpk/goslice"
-  version = "1.0.0"
+  branch = "master"

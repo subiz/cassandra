@@ -44,16 +44,16 @@
   revision = "d49c2bc1aa135aad0c6f4fc2056623ec78f5d5ac"
 
 [[projects]]
+  branch = "master"
   name = "github.com/thanhpk/goslice"
   packages = ["."]
-  revision = "334b985c3c7768fc0c6b15c9b5f73ff47ca8a6a7"
-  version = "v1.0.0"
+  revision = "d9150068033f845614e2bc24e5082f0881905ab6"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/net"
   packages = ["context"]
-  revision = "a8b9294777976932365dabb6640cf1468d95c70f"
+  revision = "42fe2e1c20de1054d3d30f82cc9fb5b41e2e3767"
 
 [[projects]]
   name = "gopkg.in/inf.v0"
@@ -64,6 +64,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "9d699e197a28c8ca4cbd86f2240af095578c16ec69a9eaaf2214a93fc5448ce0"
+  inputs-digest = "7529adfef29d9fec8b3b63e3e79a4bac0147cc9b7ca0c025230fc68a559ec890"
   solver-name = "gps-cdcl"
   solver-version = 1
