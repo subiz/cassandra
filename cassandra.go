@@ -192,11 +192,10 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 	return s.session.Query(querystring, data...).Exec()
 }
 
+var keywords = []string{ "ALL", "ALLOW", "ALTER", "AND", "ANY", "APPLY", "AS", "ASC", "ASCII", "AUTHORIZE", "BATCH", "BEGIN", "BIGINT", "BLOB", "BOOLEAN", "BY", "CLUSTERING", "COLUMNFAMILY", "COMPACT", "CONSISTENCY", "COUNT", "COUNTER", "CREATE", "CUSTOM", "DECIMAL", "DELETE", "DESC", "DISTINCT", "DOUBLE", "DROP", "EACH", "EXISTS", "FILTERING", "FLOAT", "FROM", "FROZEN", "FULL", "GRANT", "IF", "IN", "INDEX", "INET", "INFINITY", "INSERT", "INT", "INTO", "KEY", "KEYSPACE", "KEYSPACES", "LEVEL", "LIMIT", "LIST", "LOCAL", "LOCAL", "MAP", "MODIFY", "NAN", "NORECURSIVE", "NOSUPERUSER", "NOT", "OF", "ON", "ONE", "ORDER", "PASSWORD", "PERMISSION", "PERMISSIONS", "PRIMARY", "QUORUM", "RENAME", "REVOKE", "SCHEMA", "SELECT", "SET", "STATIC", "STORAGE", "SUPERUSER", "TABLE", "TEXT", "TIMESTAMP", "TIMEUUID", "THREE", "TO", "TOKEN", "TRUNCATE", "TTL", "TUPLE", "TWO", "TYPE", "UNLOGGED", "UPDATE", "USE", "USER", "USERS", "USING", "UUID", "VALUES", "VARCHAR", "VARINT", "WHERE", "WITH", "WRITETIME", "VIEW" }
+
 func isReservedKeyword(key string) bool {
-	if key == "by" {
-		return true
-	}
-	return false
+	return slice.ContainString(keywords, strings.ToUpper(key))
 }
 
 func (s *SQuery) buildQuery(query interface{}) (string, []interface{}, error) {
@@ -267,14 +266,14 @@ func (s *SQuery) analysisType(table string, p reflect.Value) (cols string, findi
 		if jsonname == "-" {
 			continue
 		}
+		if isReservedKeyword(jsonname) {
+			jsonname = "\"" + jsonname + "\""
+		}
 		// only consider column which is defined in table
 		if tbfields, ok := s.table.Get(table); ok {
 			if !slice.ContainString(tbfields.([]string), jsonname) {
 				continue
 			}
-		}
-		if isReservedKeyword(jsonname) {
-			jsonname = "\"" + jsonname + "\""
 		}
 		validC = append(validC, i)
 		columns = append(columns, jsonname)
