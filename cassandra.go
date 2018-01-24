@@ -150,6 +150,10 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 			continue
 		}
 
+		if isReservedKeyword(jsonname) {
+			jsonname = "\"" + jsonname + "\""
+		}
+
 		// only consider field which defined in table
 		if tbfields, ok := s.table.Get(table); ok {
 			if !slice.ContainString(tbfields.([]string), jsonname) {
@@ -161,9 +165,6 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 			continue
 		}
 
-		if isReservedKeyword(jsonname) {
-			jsonname = "\"" + jsonname + "\""
-		}
 		columns = append(columns, jsonname)
 		phs = append(phs, "?")
 
