@@ -55,13 +55,13 @@ func (s *SQuery) GetSession() *gocql.Session {
 func (s *SQuery) extractFields(query string) []string {
 	fs := make([]string, 0)
 	columns := strings.Split(query, "\n")
+
 	for _, col := range columns {
 		colSplit := strings.Split(col, " ")
-		f := strings.Trim(strings.Trim(colSplit[0], "	"), " ")
+		f := strings.TrimSpace(colSplit[0])
 		if f == "PRIMARY" || f == "" {
 			continue
 		}
-
 		fs = append(fs, f)
 	}
 	return fs
@@ -153,14 +153,12 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 		if isReservedKeyword(jsonname) {
 			jsonname = "\"" + jsonname + "\""
 		}
-
 		// only consider field which defined in table
 		if tbfields, ok := s.table.Get(table); ok {
 			if !slice.ContainString(tbfields.([]string), jsonname) {
 				continue
 			}
 		}
-
 		if reflect.DeepEqual(vf.Interface(), reflect.Zero(vf.Type()).Interface()) {
 			continue
 		}
