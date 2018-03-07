@@ -215,6 +215,10 @@ func (s *SQuery) buildQuery(query interface{}) (string, []interface{}, error) {
 			nk = "\"" + k + "\""
 		}
 		q = append(q, nk + "=?")
+		switch vwt := v.(type) {
+		case float64:
+			v = int64(vwt)
+		}
 		qp = append(qp, v)
 	}
 	qs := strings.Join(q, " AND ")
