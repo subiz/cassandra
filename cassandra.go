@@ -1,17 +1,17 @@
 package cassandra
 
 import (
-	json "github.com/pquerna/ffjson/ffjson"
-	"github.com/gocql/gocql"
-	"reflect"
-	"fmt"
-	"strings"
-	"github.com/cenkalti/backoff"
-	"time"
 	"errors"
-	"github.com/orcaman/concurrent-map"
+	"fmt"
+	"github.com/cenkalti/backoff"
+	"github.com/gocql/gocql"
 	"github.com/golang/protobuf/proto"
+	"github.com/orcaman/concurrent-map"
+	json "github.com/pquerna/ffjson/ffjson"
 	"github.com/thanhpk/goslice"
+	"reflect"
+	"strings"
+	"time"
 )
 
 type ICassandra interface {
@@ -20,6 +20,7 @@ type ICassandra interface {
 	ListInView(partition string, asc bool, limit int, condf func(obj interface{}) bool) []interface{}
 	Upsert(o interface{}, partition string, cluster ...string)
 	Delete(partition string, clustering ...string)
+	ListXPar(table string, p interface{}, query map[string]interface{}, parname string, pars []interface{}, limit int) error
 }
 
 type Query interface {
@@ -31,7 +32,7 @@ type Query interface {
 	List(table string, p interface{}, query map[string]interface{}, limit int) error
 	ReadBatch(table string, p interface{}, query map[string]interface{}) error
 	CreateTable(table, query string, option ...string) error
-
+	ListXPar(table string, p interface{}, query map[string]interface{}, parname string, pars []interface{}, limit int) error
 	DropTable(table string) error
 	DropView(view string) error
 }
@@ -44,8 +45,8 @@ func NewQuery() *SQuery {
 
 type SQuery struct {
 	keyspace string
-	session *gocql.Session
-	table cmap.ConcurrentMap
+	session  *gocql.Session
+	table    cmap.ConcurrentMap
 }
 
 func (s *SQuery) GetSession() *gocql.Session {
@@ -94,7 +95,7 @@ func (s *SQuery) Delete(table string, query interface{}) error {
 		return nil
 	}
 	//	qs = " WHERE " + qs
-	querystring := fmt.Sprintf("DELETE FROM %s %s", table , qs)
+	querystring := fmt.Sprintf("DELETE FROM %s %s", table, qs)
 	return s.session.Query(querystring, qp...).Exec()
 }
 
@@ -123,7 +124,7 @@ func (me *SQuery) CreateKeyspace(seeds []string, keyspace string, repfactor int)
 	}()
 
 	if err := defsession.Query(fmt.Sprintf(
-	`CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {
+		`CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {
 		'class': 'SimpleStrategy',
 		'replication_factor': %d
 	}`, keyspace, repfactor)).Exec(); err != nil {
@@ -212,7 +213,7 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 	return s.session.Query(querystring, data...).Exec()
 }
 
-var keywords = []string{ "ALL", "ALLOW", "ALTER", "AND", "ANY", "APPLY", "AS", "ASC", "ASCII", "AUTHORIZE", "BATCH", "BEGIN", "BIGINT", "BLOB", "BOOLEAN", "BY", "CLUSTERING", "COLUMNFAMILY", "COMPACT", "CONSISTENCY", "COUNT", "COUNTER", "CREATE", "CUSTOM", "DECIMAL", "DELETE", "DESC", "DISTINCT", "DOUBLE", "DROP", "EACH", "EXISTS", "FILTERING", "FLOAT", "FROM", "FROZEN", "FULL", "GRANT", "IF", "IN", "INDEX", "INET", "INFINITY", "INSERT", "INT", "INTO", "KEY", "KEYSPACE", "KEYSPACES", "LEVEL", "LIMIT", "LIST", "LOCAL", "LOCAL", "MAP", "MODIFY", "NAN", "NORECURSIVE", "NOSUPERUSER", "NOT", "OF", "ON", "ONE", "ORDER", "PASSWORD", "PERMISSION", "PERMISSIONS", "PRIMARY", "QUORUM", "RENAME", "REVOKE", "SCHEMA", "SELECT", "SET", "STATIC", "STORAGE", "SUPERUSER", "TABLE", "TEXT", "TIMESTAMP", "TIMEUUID", "THREE", "TO", "TOKEN", "TRUNCATE", "TTL", "TUPLE", "TWO", "TYPE", "UNLOGGED", "UPDATE", "USE", "USER", "USERS", "USING", "UUID", "VALUES", "VARCHAR", "VARINT", "WHERE", "WITH", "WRITETIME", "VIEW" }
+var keywords = []string{"ALL", "ALLOW", "ALTER", "AND", "ANY", "APPLY", "AS", "ASC", "ASCII", "AUTHORIZE", "BATCH", "BEGIN", "BIGINT", "BLOB", "BOOLEAN", "BY", "CLUSTERING", "COLUMNFAMILY", "COMPACT", "CONSISTENCY", "COUNT", "COUNTER", "CREATE", "CUSTOM", "DECIMAL", "DELETE", "DESC", "DISTINCT", "DOUBLE", "DROP", "EACH", "EXISTS", "FILTERING", "FLOAT", "FROM", "FROZEN", "FULL", "GRANT", "IF", "IN", "INDEX", "INET", "INFINITY", "INSERT", "INT", "INTO", "KEY", "KEYSPACE", "KEYSPACES", "LEVEL", "LIMIT", "LIST", "LOCAL", "LOCAL", "MAP", "MODIFY", "NAN", "NORECURSIVE", "NOSUPERUSER", "NOT", "OF", "ON", "ONE", "ORDER", "PASSWORD", "PERMISSION", "PERMISSIONS", "PRIMARY", "QUORUM", "RENAME", "REVOKE", "SCHEMA", "SELECT", "SET", "STATIC", "STORAGE", "SUPERUSER", "TABLE", "TEXT", "TIMESTAMP", "TIMEUUID", "THREE", "TO", "TOKEN", "TRUNCATE", "TTL", "TUPLE", "TWO", "TYPE", "UNLOGGED", "UPDATE", "USE", "USER", "USERS", "USING", "UUID", "VALUES", "VARCHAR", "VARINT", "WHERE", "WITH", "WRITETIME", "VIEW"}
 
 func isReservedKeyword(key string) bool {
 	return slice.ContainString(keywords, strings.ToUpper(key))
@@ -228,14 +229,14 @@ func (s *SQuery) buildQuery(query interface{}) (string, []interface{}, error) {
 		return "", nil, err
 	}
 
-	q := make([]string, 0, len(m)) // query
+	q := make([]string, 0, len(m))       // query
 	qp := make([]interface{}, 0, len(m)) // query parameter
 	for k, v := range m {
 		nk := k
 		if isReservedKeyword(k) {
 			nk = "\"" + k + "\""
 		}
-		q = append(q, nk + "=?")
+		q = append(q, nk+"=?")
 		switch vwt := v.(type) {
 		case float64:
 			v = int64(vwt)
@@ -267,10 +268,10 @@ func (s *SQuery) Read(table string, p interface{}, query interface{}) error {
 }
 
 func (s *SQuery) buildMapQuery(query map[string]interface{}) (string, []interface{}) {
-	q := make([]string, 0, len(query)) // query
+	q := make([]string, 0, len(query))       // query
 	qp := make([]interface{}, 0, len(query)) // query parameter
 	for k, v := range query {
-		q, qp = append(q, k + "?"), append(qp, v)
+		q, qp = append(q, k+"?"), append(qp, v)
 	}
 	qs := strings.Join(q, " AND ")
 	if qs == "" {
@@ -347,10 +348,10 @@ func (s *SQuery) buildBatchQuery(query map[string]interface{}) (string, []interf
 				ph = append(ph, "?")
 				qp = append(qp, s.Index(i).Interface())
 			}
-			phs := " (" +  strings.Join(ph, ",") + ")"
-			q = append(q, k + phs)
+			phs := " (" + strings.Join(ph, ",") + ")"
+			q = append(q, k+phs)
 		} else {
-			q = append(q, k + "?")
+			q = append(q, k+"?")
 			qp = append(qp, v)
 		}
 	}
@@ -377,7 +378,7 @@ func (s SQuery) DropTable(table string) error {
 }
 
 func (s *SQuery) alloc(v reflect.Value, findicies []int, querystring string, qp []interface{}) error {
-	val := v//reflect.MakeSlice(v.Type(), 0, 1)
+	val := v //reflect.MakeSlice(v.Type(), 0, 1)
 	iter := s.session.Query(querystring, qp...).Iter()
 	ps := reflect.MakeSlice(val.Type(), 1, 1)
 	t := val.Type().Elem().Elem()
@@ -465,6 +466,69 @@ func marshalTo(val reflect.Value, sfis map[int]*[]byte, sfises map[int]*[][]byte
 			dest = reflect.AppendSlice(dest, ss)
 		}
 		vf.Set(dest)
+	}
+	return nil
+}
+func (s *SQuery) ListXPar(table string, p interface{}, query map[string]interface{}, parname string, pars []interface{}, limit int) error {
+	if reflect.TypeOf(p).Kind() != reflect.Ptr {
+		return errors.New("cassandra reflect error: p must be a pointer to array")
+	}
+	valueOf := reflect.ValueOf(p).Elem() // a slice
+
+	if limit == 0 {
+		limit = 20
+	} else if limit < 0 {
+		limit = -limit
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	orderby := ""
+	if query["order by"] != nil {
+		orderby = "ORDER BY " + query["order by"].(string)
+		delete(query, "order by")
+	}
+
+	cols, findicies := s.analysisType(table, valueOf)
+	qs, qp := s.buildMapQuery(query)
+
+	querystring := fmt.Sprintf("SELECT %s FROM %s @@@ %s %s", cols, table, qs, orderby)
+	return s.allocXP(valueOf, parname, pars, findicies, querystring, qp, limit)
+}
+
+func (s *SQuery) allocXP(v reflect.Value, parname string, pars []interface{}, findicies []int, querystring string, qp []interface{}, limit int) error {
+	val := v //reflect.MakeSlice(v.Type(), 0, 1)
+	for _, par := range pars {
+		qssplit := strings.Split(querystring, "@@@")
+		qs := qssplit[0] + " AND " + parname + "=?" + qssplit[1]
+		cqp := append(qp, par)
+		iter := s.session.Query(qs, cqp...).Iter()
+		ps := reflect.MakeSlice(val.Type(), 1, 1)
+		t := val.Type().Elem().Elem()
+		for limit > 0 {
+			pnewele := reflect.New(t)
+			data := make([]interface{}, 0, len(findicies))
+			sfis := make(map[int]*[]byte)
+			sfises := make(map[int]*[][]byte) // slice of struct fields indexs
+			for _, i := range findicies {
+				ele := buildPlaceHolder(i, pnewele.Elem(), sfis, sfises)
+				data = append(data, ele)
+			}
+
+			if !iter.Scan(data...) {
+				break
+			}
+
+			marshalTo(pnewele.Elem(), sfis, sfises)
+			ps.Index(0).Set(pnewele)
+			val = reflect.AppendSlice(val, ps)
+			limit--
+		}
+		v.Set(val)
+		if err := iter.Close(); err != nil {
+			return nil
+		}
 	}
 	return nil
 }
