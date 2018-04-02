@@ -102,7 +102,7 @@ func (me *SQuery) CreateKeyspace(seeds []string, keyspace string, repfactor int)
 	me.keyspace = keyspace
 	cluster := gocql.NewCluster(seeds...)
 	cluster.Timeout = 10 * time.Second
-	cluster.Keyspace = "system"
+	cluster.Keyspace = "system_schema"
 	ticker := backoff.NewTicker(backoff.NewExponentialBackOff())
 	var defsession *gocql.Session
 	for range ticker.C {
@@ -122,11 +122,32 @@ func (me *SQuery) CreateKeyspace(seeds []string, keyspace string, repfactor int)
 		me.session, err = cluster.CreateSession()
 	}()
 
-	return defsession.Query(fmt.Sprintf(
+	if err := defsession.Query(fmt.Sprintf(
 	`CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {
 		'class': 'SimpleStrategy',
 		'replication_factor': %d
-	}`, keyspace, repfactor)).Exec()
+	}`, keyspace, repfactor)).Exec(); err != nil {
+		return err
+	}
+
+	return me.loadTables(keyspace)
+}
+
+func (s *SQuery) loadTables(keyspace string) error {
+	iter := s.session.Query(`SELECT table_name, column_name FROM columns WHERE keyspace_name=?`, keyspace).Iter()
+	var tbl, col string
+	km := make(map[string][]string)
+	for iter.Scan(&tbl, &col) {
+		km[tbl] = append(km[tbl], string(col))
+	}
+	if err := iter.Close(); err != nil {
+		return err
+	}
+
+	for tbl, cols := range km {
+		s.table.Set(tbl, cols)
+	}
+	return nil
 }
 
 func (s *SQuery) Upsert(table string, p interface{}) error {
