@@ -131,11 +131,11 @@ func (me *SQuery) CreateKeyspace(seeds []string, keyspace string, repfactor int)
 		return err
 	}
 
-	return me.loadTables(keyspace)
+	return me.loadTables(defsession, keyspace)
 }
 
-func (s *SQuery) loadTables(keyspace string) error {
-	iter := s.session.Query(`SELECT table_name, column_name FROM columns WHERE keyspace_name=?`, keyspace).Iter()
+func (s *SQuery) loadTables(ss *gocql.Session, keyspace string) error {
+	iter := ss.Query(`SELECT table_name, column_name FROM columns WHERE keyspace_name=?`, keyspace).Iter()
 	var tbl, col string
 	km := make(map[string][]string)
 	for iter.Scan(&tbl, &col) {
