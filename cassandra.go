@@ -3,7 +3,6 @@ package cassandra
 import (
 	"errors"
 	"fmt"
-	"github.com/cenkalti/backoff"
 	"github.com/gocql/gocql"
 	"github.com/golang/protobuf/proto"
 	"github.com/orcaman/concurrent-map"
@@ -99,24 +98,21 @@ func (s *SQuery) Delete(table string, query interface{}) error {
 	return s.session.Query(querystring, qp...).Exec()
 }
 
+
 func (me *SQuery) CreateKeyspace(seeds []string, keyspace string, repfactor int) (err error) {
 	me.keyspace = keyspace
 	cluster := gocql.NewCluster(seeds...)
 	cluster.Timeout = 10 * time.Second
 	cluster.Keyspace = "system_schema"
-	ticker := backoff.NewTicker(backoff.NewExponentialBackOff())
 	var defsession *gocql.Session
-	for range ticker.C {
-		defsession, err = cluster.CreateSession()
-		if err == nil {
-			ticker.Stop()
+	for {
+		if defsession, err = cluster.CreateSession(); err != nil {
 			break
 		}
-		fmt.Println("cassandra", err, ". Retring...")
+		fmt.Println("cassandra", err, ". Retring after 5sec...")
+		time.Sleep(5 * time.Second)
 	}
-	if err != nil {
-		return err
-	}
+
 	defer func() {
 		defsession.Close()
 		cluster.Keyspace = keyspace

@@ -2,22 +2,21 @@
 
 
 [[projects]]
-  name = "github.com/cenkalti/backoff"
-  packages = ["."]
-  revision = "61153c768f31ee5f130071d08fc82b85208528de"
-  version = "v1.1.0"
-
-[[projects]]
   branch = "master"
   name = "github.com/gocql/gocql"
-  packages = [".","internal/lru","internal/murmur","internal/streams"]
-  revision = "79434f238fe5c76efa88f8ed131adefe5b31a0d1"
+  packages = [
+    ".",
+    "internal/lru",
+    "internal/murmur",
+    "internal/streams"
+  ]
+  revision = "2e9f2912ba58e37f34af3554659b576eac655760"
 
 [[projects]]
   branch = "master"
   name = "github.com/golang/protobuf"
   packages = ["proto"]
-  revision = "1643683e1b54a9e88ad26d98f81400c8c9d9f4f9"
+  revision = "bbd03ef6da3a115852eaf24c8a1c46aeb39aa175"
 
 [[projects]]
   branch = "master"
@@ -32,7 +31,7 @@
   revision = "e80d13ce29ede4452c43dea11e79b9bc8a15b478"
 
 [[projects]]
-  branch = "master"
+  branch = "add-hash-pool"
   name = "github.com/orcaman/concurrent-map"
   packages = ["."]
   revision = "2ae17bc4c860c83513ee50feb9746f3e50d7515d"
@@ -40,20 +39,18 @@
 [[projects]]
   branch = "master"
   name = "github.com/pquerna/ffjson"
-  packages = ["ffjson","fflib/v1","fflib/v1/internal"]
+  packages = [
+    "ffjson",
+    "fflib/v1",
+    "fflib/v1/internal"
+  ]
   revision = "d49c2bc1aa135aad0c6f4fc2056623ec78f5d5ac"
 
 [[projects]]
-  branch = "master"
   name = "github.com/thanhpk/goslice"
   packages = ["."]
-  revision = "d9150068033f845614e2bc24e5082f0881905ab6"
-
-[[projects]]
-  branch = "master"
-  name = "golang.org/x/net"
-  packages = ["context"]
-  revision = "42fe2e1c20de1054d3d30f82cc9fb5b41e2e3767"
+  revision = "956fa51c129e5f0fc21f7a0253f30a518e2d9c08"
+  version = "v1.0.1"
 
 [[projects]]
   name = "gopkg.in/inf.v0"
@@ -64,6 +61,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "7529adfef29d9fec8b3b63e3e79a4bac0147cc9b7ca0c025230fc68a559ec890"
+  inputs-digest = "61ce698751af8d0127e4fb47a822df16565cbec031f503d04bf47fab52ebffc0"
   solver-name = "gps-cdcl"
   solver-version = 1
