@@ -106,13 +106,13 @@ func (me *SQuery) CreateKeyspace(seeds []string, keyspace string, repfactor int)
 	cluster.Keyspace = "system_schema"
 	var defsession *gocql.Session
 	for {
-		if defsession, err = cluster.CreateSession(); err != nil {
+		if defsession, err = cluster.CreateSession(); err == nil {
 			break
 		}
 		fmt.Println("cassandra", err, ". Retring after 5sec...")
 		time.Sleep(5 * time.Second)
 	}
-
+	fmt.Println("CONNECTED TO ", seeds)
 	defer func() {
 		defsession.Close()
 		cluster.Keyspace = keyspace
