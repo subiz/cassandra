@@ -10,13 +10,13 @@
     "internal/murmur",
     "internal/streams"
   ]
-  revision = "2e9f2912ba58e37f34af3554659b576eac655760"
+  revision = "12e3a8c05db483441932e84ab6c35c339fb01de7"
 
 [[projects]]
   branch = "master"
   name = "github.com/golang/protobuf"
   packages = ["proto"]
-  revision = "bbd03ef6da3a115852eaf24c8a1c46aeb39aa175"
+  revision = "e09c5db296004fbe3f74490e84dcd62c3c5ddb1b"
 
 [[projects]]
   branch = "master"
@@ -55,8 +55,8 @@
 [[projects]]
   name = "gopkg.in/inf.v0"
   packages = ["."]
-  revision = "3887ee99ecf07df5b447e9b00d9c0b2adaa9f3e4"
-  version = "v0.9.0"
+  revision = "d2d2541c53f18d2a059457998ce2876cc8e67cbf"
+  version = "v0.9.1"
 
 [solve-meta]
   analyzer-name = "dep"

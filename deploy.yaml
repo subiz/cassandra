@@ -67,6 +67,8 @@ metadata:
   labels:
     app: {name}
 spec:
+  selector:
+    app: {name}
   clusterIP: None
   ports:
   - protocol: TCP
