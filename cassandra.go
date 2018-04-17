@@ -489,7 +489,7 @@ func (s *SQuery) ListXPar(table string, p interface{}, query map[string]interfac
 	cols, findicies := s.analysisType(table, valueOf)
 	qs, qp := s.buildMapQuery(query)
 
-	querystring := fmt.Sprintf("SELECT %s FROM %s @@@ %s %s", cols, table, qs, orderby)
+	querystring := fmt.Sprintf("SELECT %s FROM %s %s @@@ %s", cols, table, qs, orderby)
 	return s.allocXP(valueOf, parname, pars, findicies, querystring, qp, limit)
 }
 
@@ -523,7 +523,7 @@ func (s *SQuery) allocXP(v reflect.Value, parname string, pars []interface{}, fi
 		}
 		v.Set(val)
 		if err := iter.Close(); err != nil {
-			return nil
+			return err
 		}
 	}
 	return nil
