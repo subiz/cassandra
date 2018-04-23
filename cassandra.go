@@ -168,15 +168,17 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 			continue
 		}
 
-		if isReservedKeyword(jsonname) {
-			jsonname = "\"" + jsonname + "\""
-		}
 		// only consider field which defined in table
 		if tbfields, ok := s.table.Get(table); ok {
 			if !slice.ContainString(tbfields.([]string), jsonname) {
 				continue
 			}
 		}
+
+		if isReservedKeyword(jsonname) {
+			jsonname = "\"" + jsonname + "\""
+		}
+
 		if reflect.DeepEqual(vf.Interface(), reflect.Zero(vf.Type()).Interface()) {
 			continue
 		}
@@ -255,6 +257,7 @@ func (s *SQuery) Read(table string, p interface{}, query interface{}) error {
 	if err != nil {
 		return err
 	}
+
 	if valueOf.Len() == 0 {
 		return gocql.ErrNotFound
 	}
@@ -287,18 +290,21 @@ func (s *SQuery) analysisType(table string, p reflect.Value) (cols string, findi
 		if jsonname == "-" {
 			continue
 		}
-		if isReservedKeyword(jsonname) {
-			jsonname = "\"" + jsonname + "\""
-		}
 		// only consider column which is defined in table
 		if tbfields, ok := s.table.Get(table); ok {
 			if !slice.ContainString(tbfields.([]string), jsonname) {
 				continue
 			}
 		}
+
+		if isReservedKeyword(jsonname) {
+			jsonname = "\"" + jsonname + "\""
+		}
+
 		validC = append(validC, i)
 		columns = append(columns, jsonname)
 	}
+
 	return strings.Join(columns, ","), validC
 }
 
