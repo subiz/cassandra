@@ -3,14 +3,15 @@ package cassandra
 import (
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
+	"time"
+
 	"github.com/gocql/gocql"
 	"github.com/golang/protobuf/proto"
 	"github.com/orcaman/concurrent-map"
 	json "github.com/pquerna/ffjson/ffjson"
 	"github.com/thanhpk/goslice"
-	"reflect"
-	"strings"
-	"time"
 )
 
 type ICassandra interface {
@@ -98,7 +99,6 @@ func (s *SQuery) Delete(table string, query interface{}) error {
 	return s.session.Query(querystring, qp...).Exec()
 }
 
-
 func (me *SQuery) CreateKeyspace(seeds []string, keyspace string, repfactor int) (err error) {
 	me.keyspace = keyspace
 	cluster := gocql.NewCluster(seeds...)
@@ -170,7 +170,7 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 
 		// only consider field which defined in table
 		if tbfields, ok := s.table.Get(table); ok {
-			if !slice.ContainString(tbfields.([]string), jsonname) {
+			if !slice.ContainString(tbfields.([]string), "\""+jsonname+"\"") && !slice.ContainString(tbfields.([]string), jsonname) {
 				continue
 			}
 		}
@@ -292,7 +292,7 @@ func (s *SQuery) analysisType(table string, p reflect.Value) (cols string, findi
 		}
 		// only consider column which is defined in table
 		if tbfields, ok := s.table.Get(table); ok {
-			if !slice.ContainString(tbfields.([]string), jsonname) {
+			if !slice.ContainString(tbfields.([]string), "\""+jsonname+"\"") && !slice.ContainString(tbfields.([]string), jsonname) {
 				continue
 			}
 		}
