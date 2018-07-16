@@ -1,10 +1,9 @@
-package cassandra_test
+package cassandra
 
 import (
-	"testing"
 	"strconv"
+	"testing"
 	"time"
-	. "bitbucket.org/subiz/cassandra"
 )
 
 func toString(i int) string {
@@ -30,7 +29,7 @@ var db ICassandra
 
 type User struct {
 	account, id, email string
-	updated int64
+	updated            int64
 }
 
 func TestMockView(t *testing.T) {
@@ -40,7 +39,7 @@ func TestMockView(t *testing.T) {
 	})
 	now := time.Now().Unix()
 	for i := 0; i < 100; i++ {
-		u := &User{"1", toString(i % 30), toString(i) + "@thanh.cf", now + int64(i) % 20}
+		u := &User{"1", toString(i % 30), toString(i) + "@thanh.cf", now + int64(i)%20}
 		db.Upsert(u, u.account, u.id, u.email)
 	}
 
@@ -53,7 +52,7 @@ func TestMockView(t *testing.T) {
 	if len(oser) != 60 {
 		t.Fatalf("should be 60, got %d", len(oser))
 	}
-	last := oser[len(oser) - 1].(*User)
+	last := oser[len(oser)-1].(*User)
 	ti = last.updated
 	oser = db.ListInView("1", false, 60, func(obj interface{}) bool {
 		u := obj.(*User)
@@ -75,18 +74,18 @@ func TestMock(t *testing.T) {
 
 	now := time.Now().Unix()
 	for i := 0; i < 100; i++ {
-		u := &User{"1", toString(i % 30), toString(i) + "@thanh.cf", now + int64(i) % 30}
+		u := &User{"1", toString(i % 30), toString(i) + "@thanh.cf", now + int64(i)%30}
 		db.Upsert(u, u.account, u.id, u.email)
 	}
 
-	o := db.Read("1", toString(1), toString(1) + "@thanh.cf")
+	o := db.Read("1", toString(1), toString(1)+"@thanh.cf")
 	u := o.(*User)
-	if u.account != "1" || u.id != toString(1) || u.email != toString(1) + "@thanh.cf" {
+	if u.account != "1" || u.id != toString(1) || u.email != toString(1)+"@thanh.cf" {
 		t.Fatal("should equal")
 	}
 
 	for i := 0; i < 100; i++ {
-		db.Delete("1", toString(0), toString(i) + "@thanh.cf")
+		db.Delete("1", toString(0), toString(i)+"@thanh.cf")
 	}
 
 	osers := db.List("1", true, 5, func(obj interface{}) bool {
@@ -99,7 +98,7 @@ func TestMock(t *testing.T) {
 			t.Fatalf("should be 1, got %d", u.account)
 		}
 		if i == 4 {
-			if u.id != toString(2) || u.email != toString(2) + "@thanh.cf" {
+			if u.id != toString(2) || u.email != toString(2)+"@thanh.cf" {
 				t.Fatalf("should equal, got %s, %s", u.id, u.email)
 			}
 			continue
