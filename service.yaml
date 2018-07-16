@@ -1,5 +1,5 @@
 name: cassandra
-version: 15
+version: 26
 run:
   .: |
     up inc
