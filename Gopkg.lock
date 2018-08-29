@@ -3,64 +3,86 @@
 
 [[projects]]
   branch = "master"
+  digest = "1:98696897c7ad2e4380fd7569981244931358d501f81c99a7271e91d364beb821"
   name = "github.com/gocql/gocql"
   packages = [
     ".",
     "internal/lru",
     "internal/murmur",
-    "internal/streams"
+    "internal/streams",
   ]
+  pruneopts = ""
   revision = "12e3a8c05db483441932e84ab6c35c339fb01de7"
 
 [[projects]]
   branch = "master"
+  digest = "1:27828cf74799ad14fcafece9f78f350cdbcd4fbe92c14ad4cba256fbbfa328ef"
   name = "github.com/golang/protobuf"
   packages = ["proto"]
+  pruneopts = ""
   revision = "e09c5db296004fbe3f74490e84dcd62c3c5ddb1b"
 
 [[projects]]
   branch = "master"
+  digest = "1:09307dfb1aa3f49a2bf869dcfa4c6c06ecd3c207221bd1c1a1141f0e51f209eb"
   name = "github.com/golang/snappy"
   packages = ["."]
+  pruneopts = ""
   revision = "553a641470496b2327abcac10b36396bd98e45c9"
 
 [[projects]]
   branch = "master"
+  digest = "1:60b7bc5e043a11213472ae05252527287d20e0a6ccc18f6ae67fad88e41004de"
   name = "github.com/hailocab/go-hostpool"
   packages = ["."]
+  pruneopts = ""
   revision = "e80d13ce29ede4452c43dea11e79b9bc8a15b478"
 
 [[projects]]
-  branch = "add-hash-pool"
+  branch = "master"
+  digest = "1:8bceb928c2951fc833b89c2756bfcfd4886ba785654c67b6187f0b2ace3c893f"
   name = "github.com/orcaman/concurrent-map"
   packages = ["."]
-  revision = "2ae17bc4c860c83513ee50feb9746f3e50d7515d"
+  pruneopts = ""
+  revision = "b28018939af9022337862b94a463abb18abb3e0e"
 
 [[projects]]
   branch = "master"
+  digest = "1:c7743ce9b306ce7f2b79aff7192332aef99399ef0a050ec7fe6231e3516826bf"
   name = "github.com/pquerna/ffjson"
   packages = [
     "ffjson",
     "fflib/v1",
-    "fflib/v1/internal"
+    "fflib/v1/internal",
   ]
+  pruneopts = ""
   revision = "d49c2bc1aa135aad0c6f4fc2056623ec78f5d5ac"
 
 [[projects]]
+  branch = "master"
+  digest = "1:75f696f18ab82c98b6ebdedfde6ee1f83188b236104640cd19f5e2276af50bc3"
   name = "github.com/thanhpk/goslice"
   packages = ["."]
+  pruneopts = ""
   revision = "956fa51c129e5f0fc21f7a0253f30a518e2d9c08"
-  version = "v1.0.1"
 
 [[projects]]
+  digest = "1:75fb3fcfc73a8c723efde7777b40e8e8ff9babf30d8c56160d01beffea8a95a6"
   name = "gopkg.in/inf.v0"
   packages = ["."]
+  pruneopts = ""
   revision = "d2d2541c53f18d2a059457998ce2876cc8e67cbf"
   version = "v0.9.1"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "61ce698751af8d0127e4fb47a822df16565cbec031f503d04bf47fab52ebffc0"
+  input-imports = [
+    "github.com/gocql/gocql",
+    "github.com/golang/protobuf/proto",
+    "github.com/orcaman/concurrent-map",
+    "github.com/pquerna/ffjson/ffjson",
+    "github.com/thanhpk/goslice",
+  ]
   solver-name = "gps-cdcl"
   solver-version = 1
