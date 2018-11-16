@@ -11,7 +11,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/orcaman/concurrent-map"
 	json "github.com/pquerna/ffjson/ffjson"
-	"github.com/thanhpk/goslice"
 )
 
 type ICassandra interface {
@@ -170,7 +169,7 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 
 		// only consider field which defined in table
 		if tbfields, ok := s.table.Get(table); ok {
-			if !slice.ContainString(tbfields.([]string), "\""+jsonname+"\"") && !slice.ContainString(tbfields.([]string), jsonname) {
+			if !containString(tbfields.([]string), "\""+jsonname+"\"") && !containString(tbfields.([]string), jsonname) {
 				continue
 			}
 		}
@@ -214,7 +213,7 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 var keywords = []string{"ALL", "ALLOW", "ALTER", "AND", "ANY", "APPLY", "AS", "ASC", "ASCII", "AUTHORIZE", "BATCH", "BEGIN", "BIGINT", "BLOB", "BOOLEAN", "BY", "CLUSTERING", "COLUMNFAMILY", "COMPACT", "CONSISTENCY", "COUNT", "COUNTER", "CREATE", "CUSTOM", "DECIMAL", "DELETE", "DESC", "DISTINCT", "DOUBLE", "DROP", "EACH", "EXISTS", "FILTERING", "FLOAT", "FROM", "FROZEN", "FULL", "GRANT", "IF", "IN", "INDEX", "INET", "INFINITY", "INSERT", "INT", "INTO", "KEY", "KEYSPACE", "KEYSPACES", "LEVEL", "LIMIT", "LIST", "LOCAL", "LOCAL", "MAP", "MODIFY", "NAN", "NORECURSIVE", "NOSUPERUSER", "NOT", "OF", "ON", "ONE", "ORDER", "PASSWORD", "PERMISSION", "PERMISSIONS", "PRIMARY", "QUORUM", "RENAME", "REVOKE", "SCHEMA", "SELECT", "SET", "STATIC", "STORAGE", "SUPERUSER", "TABLE", "TEXT", "TIMESTAMP", "TIMEUUID", "THREE", "TO", "TOKEN", "TRUNCATE", "TTL", "TUPLE", "TWO", "UNLOGGED", "UPDATE", "USE", "USER", "USERS", "USING", "UUID", "VALUES", "VARCHAR", "VARINT", "WHERE", "WITH", "WRITETIME", "VIEW"}
 
 func isReservedKeyword(key string) bool {
-	return slice.ContainString(keywords, strings.ToUpper(key))
+	return containString(keywords, strings.ToUpper(key))
 }
 
 func (s *SQuery) buildQuery(query interface{}) (string, []interface{}, error) {
@@ -292,7 +291,7 @@ func (s *SQuery) analysisType(table string, p reflect.Value) (cols string, findi
 		}
 		// only consider column which is defined in table
 		if tbfields, ok := s.table.Get(table); ok {
-			if !slice.ContainString(tbfields.([]string), "\""+jsonname+"\"") && !slice.ContainString(tbfields.([]string), jsonname) {
+			if !containString(tbfields.([]string), "\""+jsonname+"\"") && !containString(tbfields.([]string), jsonname) {
 				continue
 			}
 		}
@@ -534,4 +533,13 @@ func (s *SQuery) allocXP(v reflect.Value, parname string, pars []interface{}, fi
 		}
 	}
 	return nil
+}
+
+func containString(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
 }
