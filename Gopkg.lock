@@ -46,18 +46,6 @@
   revision = "b28018939af9022337862b94a463abb18abb3e0e"
 
 [[projects]]
-  branch = "master"
-  digest = "1:63987b971c0f3240a0f1eed70b80b360e6a57d7a8c85ed7daa8bf770319ab308"
-  name = "github.com/pquerna/ffjson"
-  packages = [
-    "ffjson",
-    "fflib/v1",
-    "fflib/v1/internal",
-  ]
-  pruneopts = "UT"
-  revision = "e517b90714f7c0eabe6d2e570a5886ae077d6db6"
-
-[[projects]]
   digest = "1:2d1fbdc6777e5408cabeb02bf336305e724b925ff4546ded0fa8715a7267922a"
   name = "gopkg.in/inf.v0"
   packages = ["."]
@@ -72,7 +60,6 @@
     "github.com/gocql/gocql",
     "github.com/golang/protobuf/proto",
     "github.com/orcaman/concurrent-map",
-    "github.com/pquerna/ffjson/ffjson",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1

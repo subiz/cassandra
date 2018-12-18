@@ -37,10 +37,6 @@
   branch = "master"
   name = "github.com/orcaman/concurrent-map"
 
-[[constraint]]
-  branch = "master"
-  name = "github.com/pquerna/ffjson"
-
 [prune]
   go-tests = true
   unused-packages = true
