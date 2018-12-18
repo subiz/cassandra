@@ -1,6 +1,7 @@
 package cassandra
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -10,7 +11,6 @@ import (
 	"github.com/gocql/gocql"
 	"github.com/golang/protobuf/proto"
 	"github.com/orcaman/concurrent-map"
-	json "github.com/pquerna/ffjson/ffjson"
 )
 
 type ICassandra interface {
@@ -78,14 +78,6 @@ func (s *SQuery) CreateTable(table string, query string, option ...string) error
 }
 
 func (s *SQuery) Delete(table string, query interface{}) error {
-	var m map[string]interface{}
-	b, err := json.Marshal(query)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(b, &m); err != nil {
-		return err
-	}
 	qs, qp, err := s.buildQuery(query)
 	if err != nil {
 		return err
