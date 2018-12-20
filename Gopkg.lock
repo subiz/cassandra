@@ -2,7 +2,8 @@
 
 
 [[projects]]
-  digest = "1:f11a8792c4c5adb28b18c04b478c7f9dc48d54b8e2a90a56b17592afbc4f636e"
+  branch = "master"
+  digest = "1:1a5f28249f1a5b118994359a1c7b8c53ee1ff47aa7fe65884fbd20cd237001f4"
   name = "github.com/gocql/gocql"
   packages = [
     ".",
@@ -11,7 +12,7 @@
     "internal/streams",
   ]
   pruneopts = "UT"
-  revision = "9bf6ce5bbcf1d790a892d0d470044bc891b798d6"
+  revision = "70385f88b28b43805bd83d212169ab2d38810b15"
 
 [[projects]]
   digest = "1:97df918963298c287643883209a2c3f642e6593379f97ab400c2a2e219ab647d"
@@ -38,14 +39,6 @@
   revision = "e80d13ce29ede4452c43dea11e79b9bc8a15b478"
 
 [[projects]]
-  branch = "master"
-  digest = "1:f7aa53146bf79462509d4ce136826ebbd64907e4679e1b04e62758da6b68e589"
-  name = "github.com/orcaman/concurrent-map"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "b28018939af9022337862b94a463abb18abb3e0e"
-
-[[projects]]
   digest = "1:2d1fbdc6777e5408cabeb02bf336305e724b925ff4546ded0fa8715a7267922a"
   name = "gopkg.in/inf.v0"
   packages = ["."]
@@ -59,7 +52,6 @@
   input-imports = [
     "github.com/gocql/gocql",
     "github.com/golang/protobuf/proto",
-    "github.com/orcaman/concurrent-map",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1
