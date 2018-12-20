@@ -6,53 +6,51 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gocql/gocql"
 	"github.com/golang/protobuf/proto"
-	"github.com/orcaman/concurrent-map"
 )
 
-type ICassandra interface {
-	Read(partition string, cluster ...string) interface{}
-	List(partition string, asc bool, limit int, condf func(obj interface{}) bool) []interface{}
-	ListInView(partition string, asc bool, limit int, condf func(obj interface{}) bool) []interface{}
-	Upsert(o interface{}, partition string, cluster ...string)
-	Delete(partition string, clustering ...string)
-	ListXPar(table string, p interface{}, query map[string]interface{}, parname string, pars []interface{}, limit int) error
-}
-
-type Query interface {
-	GetSession() *gocql.Session
-	Delete(table string, query interface{}) error
-	Read(table string, p interface{}, query interface{}) error
-	Upsert(table string, p interface{}) error
-	CreateKeyspace(seeds []string, keyspace string, repfactor int) error
-	List(table string, p interface{}, query map[string]interface{}, limit int) error
-	ReadBatch(table string, p interface{}, query map[string]interface{}) error
-	CreateTable(table, query string, option ...string) error
-	ListXPar(table string, p interface{}, query map[string]interface{}, parname string, pars []interface{}, limit int) error
-	DropTable(table string) error
-	DropView(view string) error
-}
-
-func NewQuery() *SQuery {
-	return &SQuery{
-		table: cmap.New(),
+func (me *Query) Connect(seeds []string, keyspace string) error {
+	me.keyspace = keyspace
+	me.table = new(sync.Map)
+	cluster := gocql.NewCluster(seeds...)
+	cluster.Timeout = 10 * time.Second
+	cluster.Keyspace = "system_schema"
+	var defaultSession *gocql.Session
+	var err error
+	for {
+		if defaultSession, err = cluster.CreateSession(); err == nil {
+			break
+		}
+		fmt.Println("cassandra", err, ". Retring after 5sec...")
+		time.Sleep(5 * time.Second)
 	}
+
+	fmt.Println("CONNECTED TO ", seeds)
+
+	defer func() {
+		defaultSession.Close()
+	}()
+
+	if err = me.loadTables(defaultSession, keyspace); err != nil {
+		return err
+	}
+
+	cluster.Keyspace = keyspace
+	me.Session, err = cluster.CreateSession()
+	return err
 }
 
-type SQuery struct {
+type Query struct {
 	keyspace string
-	session  *gocql.Session
-	table    cmap.ConcurrentMap
+	Session  *gocql.Session
+	table    *sync.Map
 }
 
-func (s *SQuery) GetSession() *gocql.Session {
-	return s.session
-}
-
-func (s *SQuery) extractFields(query string) []string {
+func (s *Query) extractFields(query string) []string {
 	fs := make([]string, 0)
 	columns := strings.Split(query, "\n")
 
@@ -67,17 +65,18 @@ func (s *SQuery) extractFields(query string) []string {
 	return fs
 }
 
-func (s *SQuery) CreateTable(table string, query string, option ...string) error {
+func (s *Query) CreateTable(table string, query string, option ...string) error {
 	var o string
 	if len(option) > 0 {
 		o = option[0]
 	}
-	s.table.Set(table, s.extractFields(query))
+	s.table.Store(table, s.extractFields(query))
 
-	return s.session.Query(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (%s)%s`, table, query, o)).Exec()
+	return s.Session.Query(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (%s)%s`,
+		table, query, o)).Exec()
 }
 
-func (s *SQuery) Delete(table string, query interface{}) error {
+func (s *Query) Delete(table string, query interface{}) error {
 	qs, qp, err := s.buildQuery(query)
 	if err != nil {
 		return err
@@ -87,42 +86,35 @@ func (s *SQuery) Delete(table string, query interface{}) error {
 	}
 	//	qs = " WHERE " + qs
 	querystring := fmt.Sprintf("DELETE FROM %s %s", table, qs)
-	return s.session.Query(querystring, qp...).Exec()
+	return s.Session.Query(querystring, qp...).Exec()
 }
 
-func (me *SQuery) CreateKeyspace(seeds []string, keyspace string, repfactor int) (err error) {
-	me.keyspace = keyspace
+func CreateKeyspace(seeds []string, keyspace string, repfactor int) error {
 	cluster := gocql.NewCluster(seeds...)
 	cluster.Timeout = 10 * time.Second
 	cluster.Keyspace = "system_schema"
-	var defsession *gocql.Session
+	var defaultSession *gocql.Session
+	var err error
 	for {
-		if defsession, err = cluster.CreateSession(); err == nil {
+		if defaultSession, err = cluster.CreateSession(); err == nil {
 			break
 		}
 		fmt.Println("cassandra", err, ". Retring after 5sec...")
 		time.Sleep(5 * time.Second)
 	}
 	fmt.Println("CONNECTED TO ", seeds)
-	defer func() {
-		defsession.Close()
-		cluster.Keyspace = keyspace
-		me.session, err = cluster.CreateSession()
-	}()
+	defer defaultSession.Close()
 
-	if err := defsession.Query(fmt.Sprintf(
+	return defaultSession.Query(fmt.Sprintf(
 		`CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {
 		'class': 'SimpleStrategy',
 		'replication_factor': %d
-	}`, keyspace, repfactor)).Exec(); err != nil {
-		return err
-	}
-
-	return me.loadTables(defsession, keyspace)
+	}`, keyspace, repfactor)).Exec()
 }
 
-func (s *SQuery) loadTables(ss *gocql.Session, keyspace string) error {
-	iter := ss.Query(`SELECT table_name, column_name FROM columns WHERE keyspace_name=?`, keyspace).Iter()
+func (s *Query) loadTables(ss *gocql.Session, keyspace string) error {
+	iter := ss.Query(`SELECT table_name, column_name FROM columns WHERE `+
+		`keyspace_name=?`, keyspace).Iter()
 	var tbl, col string
 	km := make(map[string][]string)
 	for iter.Scan(&tbl, &col) {
@@ -133,12 +125,12 @@ func (s *SQuery) loadTables(ss *gocql.Session, keyspace string) error {
 	}
 
 	for tbl, cols := range km {
-		s.table.Set(tbl, cols)
+		s.table.Store(tbl, cols)
 	}
 	return nil
 }
 
-func (s *SQuery) Upsert(table string, p interface{}) error {
+func (s *Query) Upsert(table string, p interface{}) error {
 	columns := make([]string, 0)
 	phs := make([]string, 0) // place holders
 	data := make([]interface{}, 0)
@@ -160,7 +152,7 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 		}
 
 		// only consider field which defined in table
-		if tbfields, ok := s.table.Get(table); ok {
+		if tbfields, ok := s.table.Load(table); ok {
 			if !containString(tbfields.([]string), "\""+jsonname+"\"") && !containString(tbfields.([]string), jsonname) {
 				continue
 			}
@@ -199,7 +191,7 @@ func (s *SQuery) Upsert(table string, p interface{}) error {
 	}
 
 	querystring := fmt.Sprintf("INSERT INTO %s(%s) VALUES (%s)", table, strings.Join(columns, ","), strings.Join(phs, ","))
-	return s.session.Query(querystring, data...).Exec()
+	return s.Session.Query(querystring, data...).Exec()
 }
 
 var keywords = []string{"ALL", "ALLOW", "ALTER", "AND", "ANY", "APPLY", "AS", "ASC", "ASCII", "AUTHORIZE", "BATCH", "BEGIN", "BIGINT", "BLOB", "BOOLEAN", "BY", "CLUSTERING", "COLUMNFAMILY", "COMPACT", "CONSISTENCY", "COUNT", "COUNTER", "CREATE", "CUSTOM", "DECIMAL", "DELETE", "DESC", "DISTINCT", "DOUBLE", "DROP", "EACH", "EXISTS", "FILTERING", "FLOAT", "FROM", "FROZEN", "FULL", "GRANT", "IF", "IN", "INDEX", "INET", "INFINITY", "INSERT", "INT", "INTO", "KEY", "KEYSPACE", "KEYSPACES", "LEVEL", "LIMIT", "LIST", "LOCAL", "LOCAL", "MAP", "MODIFY", "NAN", "NORECURSIVE", "NOSUPERUSER", "NOT", "OF", "ON", "ONE", "ORDER", "PASSWORD", "PERMISSION", "PERMISSIONS", "PRIMARY", "QUORUM", "RENAME", "REVOKE", "SCHEMA", "SELECT", "SET", "STATIC", "STORAGE", "SUPERUSER", "TABLE", "TEXT", "TIMESTAMP", "TIMEUUID", "THREE", "TO", "TOKEN", "TRUNCATE", "TTL", "TUPLE", "TWO", "UNLOGGED", "UPDATE", "USE", "USER", "USERS", "USING", "UUID", "VALUES", "VARCHAR", "VARINT", "WHERE", "WITH", "WRITETIME", "VIEW"}
@@ -208,7 +200,7 @@ func isReservedKeyword(key string) bool {
 	return containString(keywords, strings.ToUpper(key))
 }
 
-func (s *SQuery) buildQuery(query interface{}) (string, []interface{}, error) {
+func (s *Query) buildQuery(query interface{}) (string, []interface{}, error) {
 	var m map[string]interface{}
 	b, err := json.Marshal(query)
 	if err != nil {
@@ -239,7 +231,7 @@ func (s *SQuery) buildQuery(query interface{}) (string, []interface{}, error) {
 	return " WHERE " + qs, qp, nil
 }
 
-func (s *SQuery) Read(table string, p interface{}, query interface{}) error {
+func (s *Query) Read(table string, p interface{}, query interface{}) error {
 	valueOf := reflect.New(reflect.SliceOf(reflect.TypeOf(p))).Elem()
 	cols, findicies := s.analysisType(table, valueOf)
 	qs, qp, err := s.buildQuery(query)
@@ -257,7 +249,7 @@ func (s *SQuery) Read(table string, p interface{}, query interface{}) error {
 	return nil
 }
 
-func (s *SQuery) buildMapQuery(query map[string]interface{}) (string, []interface{}) {
+func (s *Query) buildMapQuery(query map[string]interface{}) (string, []interface{}) {
 	q := make([]string, 0, len(query))       // query
 	qp := make([]interface{}, 0, len(query)) // query parameter
 	for k, v := range query {
@@ -271,7 +263,7 @@ func (s *SQuery) buildMapQuery(query map[string]interface{}) (string, []interfac
 }
 
 // p is pointer to array of pointer
-func (s *SQuery) analysisType(table string, p reflect.Value) (cols string, findices []int) {
+func (s *Query) analysisType(table string, p reflect.Value) (cols string, findices []int) {
 	columns := make([]string, 0)
 	eleTypeOf := p.Type().Elem().Elem()
 	validC := make([]int, 0)
@@ -282,7 +274,7 @@ func (s *SQuery) analysisType(table string, p reflect.Value) (cols string, findi
 			continue
 		}
 		// only consider column which is defined in table
-		if tbfields, ok := s.table.Get(table); ok {
+		if tbfields, ok := s.table.Load(table); ok {
 			if !containString(tbfields.([]string), "\""+jsonname+"\"") && !containString(tbfields.([]string), jsonname) {
 				continue
 			}
@@ -299,7 +291,7 @@ func (s *SQuery) analysisType(table string, p reflect.Value) (cols string, findi
 	return strings.Join(columns, ","), validC
 }
 
-func (s *SQuery) List(table string, p interface{}, query map[string]interface{}, limit int) error {
+func (s *Query) List(table string, p interface{}, query map[string]interface{}, limit int) error {
 	if reflect.TypeOf(p).Kind() != reflect.Ptr {
 		return errors.New("cassandra reflect error: p must be a pointer to array")
 	}
@@ -327,7 +319,7 @@ func (s *SQuery) List(table string, p interface{}, query map[string]interface{},
 	return s.alloc(valueOf, findicies, querystring, qp)
 }
 
-func (s *SQuery) buildBatchQuery(query map[string]interface{}) (string, []interface{}) {
+func (s *Query) buildBatchQuery(query map[string]interface{}) (string, []interface{}) {
 	q := make([]string, 0) // query
 	qp := make([]interface{}, 0)
 	for k, v := range query {
@@ -355,24 +347,24 @@ func (s *SQuery) buildBatchQuery(query map[string]interface{}) (string, []interf
 	return " WHERE " + qs, qp
 }
 
-func (s SQuery) DropKeyspace() error {
+func (s Query) DropKeyspace() error {
 	querystring := "DROP KEYSPACE IF EXISTS " + s.keyspace
-	return s.session.Query(querystring).Exec()
+	return s.Session.Query(querystring).Exec()
 }
 
-func (s SQuery) DropView(view string) error {
+func (s Query) DropView(view string) error {
 	querystring := "DROP MATERIALIZED VIEW IF EXISTS " + view
-	return s.session.Query(querystring).Exec()
+	return s.Session.Query(querystring).Exec()
 }
 
-func (s SQuery) DropTable(table string) error {
+func (s Query) DropTable(table string) error {
 	querystring := "DROP TABLE IF EXISTS " + table
-	return s.session.Query(querystring).Exec()
+	return s.Session.Query(querystring).Exec()
 }
 
-func (s *SQuery) alloc(v reflect.Value, findicies []int, querystring string, qp []interface{}) error {
+func (s *Query) alloc(v reflect.Value, findicies []int, querystring string, qp []interface{}) error {
 	val := v //reflect.MakeSlice(v.Type(), 0, 1)
-	iter := s.session.Query(querystring, qp...).Iter()
+	iter := s.Session.Query(querystring, qp...).Iter()
 	ps := reflect.MakeSlice(val.Type(), 1, 1)
 	t := val.Type().Elem().Elem()
 	for {
@@ -397,7 +389,7 @@ func (s *SQuery) alloc(v reflect.Value, findicies []int, querystring string, qp 
 	return iter.Close()
 }
 
-func (s *SQuery) ReadBatch(table string, p interface{}, query map[string]interface{}) error {
+func (s *Query) ReadBatch(table string, p interface{}, query map[string]interface{}) error {
 	if reflect.TypeOf(p).Kind() != reflect.Ptr {
 		return errors.New("cassandra reflect error: p must be a pointer to array")
 	}
@@ -463,7 +455,7 @@ func marshalTo(val reflect.Value, sfis map[int]*[]byte, sfises map[int]*[][]byte
 	return nil
 }
 
-func (s *SQuery) ListXPar(table string, p interface{}, query map[string]interface{}, parname string, pars []interface{}, limit int) error {
+func (s *Query) ListXPar(table string, p interface{}, query map[string]interface{}, parname string, pars []interface{}, limit int) error {
 	if reflect.TypeOf(p).Kind() != reflect.Ptr {
 		return errors.New("cassandra reflect error: p must be a pointer to array")
 	}
@@ -491,13 +483,13 @@ func (s *SQuery) ListXPar(table string, p interface{}, query map[string]interfac
 	return s.allocXP(valueOf, parname, pars, findicies, querystring, qp, limit)
 }
 
-func (s *SQuery) allocXP(v reflect.Value, parname string, pars []interface{}, findicies []int, querystring string, qp []interface{}, limit int) error {
+func (s *Query) allocXP(v reflect.Value, parname string, pars []interface{}, findicies []int, querystring string, qp []interface{}, limit int) error {
 	val := v //reflect.MakeSlice(v.Type(), 0, 1)
 	for _, par := range pars {
 		qssplit := strings.Split(querystring, "@@@")
 		qs := qssplit[0] + " AND " + parname + "=?" + qssplit[1]
 		cqp := append(qp, par)
-		iter := s.session.Query(qs, cqp...).Iter()
+		iter := s.Session.Query(qs, cqp...).Iter()
 		ps := reflect.MakeSlice(val.Type(), 1, 1)
 		t := val.Type().Elem().Elem()
 		for limit > 0 {
