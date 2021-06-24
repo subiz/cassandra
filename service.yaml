@@ -1,8 +1,0 @@
-name: cassandra
-version: 26
-run:
-  .: |
-    up inc
-    up compile-dev
-    kubectl apply -f deploy-lock.yaml
-  log: stern {name} -c {name}
