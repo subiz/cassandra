@@ -18,6 +18,7 @@ func (me *Query) Connect(seeds []string, keyspace string) error {
 	me.table = new(sync.Map)
 	cluster := gocql.NewCluster(seeds...)
 	cluster.Timeout = 30 * time.Second
+	cluster.ConnectTimeout = 30 * time.Second
 	cluster.Keyspace = "system_schema"
 	var defaultSession *gocql.Session
 	var err error
@@ -92,6 +93,7 @@ func (s *Query) Delete(table string, query interface{}) error {
 func CreateKeyspace(seeds []string, keyspace string, repfactor int) error {
 	cluster := gocql.NewCluster(seeds...)
 	cluster.Timeout = 30 * time.Second
+	cluster.ConnectTimeout = 30 * time.Second
 	cluster.Keyspace = "system_schema"
 	var defaultSession *gocql.Session
 	var err error
