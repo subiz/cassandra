@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql"
-	"github.com/golang/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 )
 
 func (me *Query) Connect(seeds []string, keyspace string) error {

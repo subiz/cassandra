@@ -3,7 +3,7 @@ module github.com/subiz/cassandra
 go 1.16
 
 require (
-	github.com/gocql/gocql v0.0.0-20210621133426-d83b80dfb480
-	github.com/golang/protobuf v1.5.2
-	github.com/pierrec/lz4/v4 v4.1.8 // indirect
+	github.com/gocql/gocql v0.0.0-20211015133455-b225f9b53fa1
+	github.com/golang/snappy v0.0.4 // indirect
+	google.golang.org/protobuf v1.27.1
 )
