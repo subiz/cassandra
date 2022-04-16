@@ -196,6 +196,82 @@ func (s *Query) Upsert(table string, p interface{}) error {
 	return s.Session.Query(querystring, data...).Exec()
 }
 
+func (s *Query) Upsertf(table string, p interface{}, jsonnames []string) error {
+	if len(jsonnames) == 0 {
+		return s.Upsert(table, p)
+	}
+	columns := make([]string, 0)
+	phs := make([]string, 0) // place holders
+	data := make([]interface{}, 0)
+
+	var valueOf reflect.Value
+	var typeOf reflect.Type
+	if reflect.TypeOf(p).Kind() == reflect.Ptr {
+		valueOf, typeOf = reflect.ValueOf(p).Elem(), reflect.TypeOf(p).Elem()
+	} else {
+		valueOf, typeOf = reflect.ValueOf(p), reflect.TypeOf(p)
+	}
+
+	jsonnamem := make(map[string]struct{})
+	for _, name := range jsonnames {
+		jsonnamem[name] = struct{}{}
+	}
+	for i := 0; i < valueOf.NumField(); i++ {
+		vf := valueOf.Field(i)
+		tf := typeOf.Field(i)
+
+		jsonname := strings.Split(tf.Tag.Get("json"), ",")[0]
+		if jsonname == "-" {
+			continue
+		}
+
+		if _, has := jsonnamem[jsonname]; !has {
+			continue
+		}
+
+		// only consider field which defined in table
+		if tbfields, ok := s.table.Load(table); ok {
+			if !containString(tbfields.([]string), "\""+jsonname+"\"") && !containString(tbfields.([]string), jsonname) {
+				continue
+			}
+		}
+
+		if isReservedKeyword(jsonname) {
+			jsonname = "\"" + jsonname + "\""
+		}
+
+		// if reflect.DeepEqual(vf.Interface(), reflect.Zero(vf.Type()).Interface()) {
+		// 	continue
+		// }
+
+		columns = append(columns, jsonname)
+		phs = append(phs, "?")
+
+		if vf.Type().Kind() == reflect.Slice && vf.Type().Elem().Kind() == reflect.Ptr {
+			bs := make([][]byte, 0, vf.Len())
+			for i := 0; i < vf.Len(); i++ {
+				b, err := proto.Marshal(vf.Index(i).Interface().(proto.Message))
+				if err != nil {
+					return err
+				}
+				bs = append(bs, b)
+			}
+			data = append(data, bs)
+		} else if vf.Type().Kind() == reflect.Ptr && vf.Type().Elem().Kind() == reflect.Struct {
+			b, err := proto.Marshal(vf.Interface().(proto.Message))
+			if err != nil {
+				return err
+			}
+			data = append(data, b)
+		} else {
+			data = append(data, vf.Interface())
+		}
+	}
+
+	querystring := fmt.Sprintf("INSERT INTO %s(%s) VALUES (%s)", table, strings.Join(columns, ","), strings.Join(phs, ","))
+	return s.Session.Query(querystring, data...).Exec()
+}
+
 var keywords = []string{"ALL", "ALLOW", "ALTER", "AND", "ANY", "APPLY", "AS", "ASC", "ASCII", "AUTHORIZE", "BATCH", "BEGIN", "BIGINT", "BLOB", "BOOLEAN", "BY", "CLUSTERING", "COLUMNFAMILY", "COMPACT", "CONSISTENCY", "COUNT", "COUNTER", "CREATE", "CUSTOM", "DECIMAL", "DELETE", "DESC", "DISTINCT", "DOUBLE", "DROP", "EACH", "EXISTS", "FILTERING", "FLOAT", "FROM", "FROZEN", "FULL", "GRANT", "IF", "IN", "INDEX", "INET", "INFINITY", "INSERT", "INT", "INTO", "KEY", "KEYSPACE", "KEYSPACES", "LEVEL", "LIMIT", "LIST", "LOCAL", "LOCAL", "MAP", "MODIFY", "NAN", "NORECURSIVE", "NOSUPERUSER", "NOT", "OF", "ON", "ONE", "ORDER", "PASSWORD", "PERMISSION", "PERMISSIONS", "PRIMARY", "QUORUM", "RENAME", "REVOKE", "SCHEMA", "SELECT", "SET", "STATIC", "STORAGE", "SUPERUSER", "TABLE", "TEXT", "TIMESTAMP", "TIMEUUID", "THREE", "TO", "TOKEN", "TRUNCATE", "TTL", "TUPLE", "TWO", "UNLOGGED", "UPDATE", "USE", "USER", "USERS", "USING", "UUID", "VALUES", "VARCHAR", "VARINT", "WHERE", "WITH", "WRITETIME", "VIEW"}
 
 func isReservedKeyword(key string) bool {
