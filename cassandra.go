@@ -240,9 +240,10 @@ func (s *Query) Upsertf(table string, p interface{}, jsonnames []string) error {
 			jsonname = "\"" + jsonname + "\""
 		}
 
-		// if reflect.DeepEqual(vf.Interface(), reflect.Zero(vf.Type()).Interface()) {
-		// 	continue
-		// }
+		// don't want zero value but bool
+		if tf.Type != reflect.TypeOf(true) && reflect.DeepEqual(vf.Interface(), reflect.Zero(vf.Type()).Interface()) {
+			continue
+		}
 
 		columns = append(columns, jsonname)
 		phs = append(phs, "?")
