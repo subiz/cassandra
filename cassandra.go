@@ -33,8 +33,7 @@ type Query struct {
 }
 
 func (s *Query) loadTables(ss *gocql.Session, keyspace string) error {
-	iter := ss.Query(`SELECT table_name, column_name FROM columns WHERE `+
-		`keyspace_name=?`, keyspace).Iter()
+	iter := ss.Query(`SELECT table_name, column_name FROM system_schema.columns WHERE keyspace_name=?`, keyspace).Iter()
 	var tbl, col string
 	km := make(map[string][]string)
 	for iter.Scan(&tbl, &col) {
@@ -73,7 +72,7 @@ func (s *Query) Upsert(table string, p interface{}) error {
 
 		// only consider field which defined in table
 		if tbfields, ok := s.table.Load(table); ok {
-			if !containString(tbfields.([]string), "\""+jsonname+"\"") && !containString(tbfields.([]string), jsonname) {
+			if !header.ContainString(tbfields.([]string), "\""+jsonname+"\"") && !header.ContainString(tbfields.([]string), jsonname) {
 				continue
 			}
 		}
@@ -117,7 +116,7 @@ func (s *Query) Upsert(table string, p interface{}) error {
 var keywords = []string{"ALL", "ALLOW", "ALTER", "AND", "ANY", "APPLY", "AS", "ASC", "ASCII", "AUTHORIZE", "BATCH", "BEGIN", "BIGINT", "BLOB", "BOOLEAN", "BY", "CLUSTERING", "COLUMNFAMILY", "COMPACT", "CONSISTENCY", "COUNT", "COUNTER", "CREATE", "CUSTOM", "DECIMAL", "DELETE", "DESC", "DISTINCT", "DOUBLE", "DROP", "EACH", "EXISTS", "FILTERING", "FLOAT", "FROM", "FROZEN", "FULL", "GRANT", "IF", "IN", "INDEX", "INET", "INFINITY", "INSERT", "INT", "INTO", "KEY", "KEYSPACE", "KEYSPACES", "LEVEL", "LIMIT", "LIST", "LOCAL", "LOCAL", "MAP", "MODIFY", "NAN", "NORECURSIVE", "NOSUPERUSER", "NOT", "OF", "ON", "ONE", "ORDER", "PASSWORD", "PERMISSION", "PERMISSIONS", "PRIMARY", "QUORUM", "RENAME", "REVOKE", "SCHEMA", "SELECT", "SET", "STATIC", "STORAGE", "SUPERUSER", "TABLE", "TEXT", "TIMESTAMP", "TIMEUUID", "THREE", "TO", "TOKEN", "TRUNCATE", "TTL", "TUPLE", "TWO", "UNLOGGED", "UPDATE", "USE", "USER", "USERS", "USING", "UUID", "VALUES", "VARCHAR", "VARINT", "WHERE", "WITH", "WRITETIME", "VIEW"}
 
 func isReservedKeyword(key string) bool {
-	return containString(keywords, strings.ToUpper(key))
+	return header.ContainString(keywords, strings.ToUpper(key))
 }
 
 func (s *Query) buildQuery(query interface{}) (string, []interface{}, error) {
@@ -195,7 +194,7 @@ func (s *Query) analysisType(table string, p reflect.Value) (cols string, findic
 		}
 		// only consider column which is defined in table
 		if tbfields, ok := s.table.Load(table); ok {
-			if !containString(tbfields.([]string), "\""+jsonname+"\"") && !containString(tbfields.([]string), jsonname) {
+			if !header.ContainString(tbfields.([]string), "\""+jsonname+"\"") && !header.ContainString(tbfields.([]string), jsonname) {
 				continue
 			}
 		}
@@ -294,17 +293,6 @@ func (s *Query) alloc(v reflect.Value, findicies []int, querystring string, qp [
 	return iter.Close()
 }
 
-func (s *Query) ReadBatch(table string, p interface{}, query map[string]interface{}) error {
-	if reflect.TypeOf(p).Kind() != reflect.Ptr {
-		return errors.New("cassandra reflect error: p must be a pointer to array")
-	}
-	valueOf := reflect.ValueOf(p).Elem() // a slice
-	cols, findicies := s.analysisType(table, valueOf)
-	qs, qp := s.buildBatchQuery(query)
-	querystring := fmt.Sprintf("SELECT %s FROM %s %s", cols, table, qs)
-	return s.alloc(valueOf, findicies, querystring, qp)
-}
-
 func unmarshalPointerToStruct(b []byte, tf reflect.Type) (reflect.Value, error) {
 	pf := reflect.New(tf.Elem())
 	err := proto.Unmarshal(b, pf.Interface().(proto.Message))
@@ -358,77 +346,4 @@ func marshalTo(val reflect.Value, sfis map[int]*[]byte, sfises map[int]*[][]byte
 		vf.Set(dest)
 	}
 	return nil
-}
-
-func (s *Query) ListXPar(table string, p interface{}, query map[string]interface{}, parname string, pars []interface{}, limit int) error {
-	if reflect.TypeOf(p).Kind() != reflect.Ptr {
-		return errors.New("cassandra reflect error: p must be a pointer to array")
-	}
-	valueOf := reflect.ValueOf(p).Elem() // a slice
-
-	if limit == 0 {
-		limit = 20
-	} else if limit < 0 {
-		limit = -limit
-	}
-	if limit > 1000 {
-		limit = 1000
-	}
-
-	orderby := ""
-	if query["order by"] != nil {
-		orderby = "ORDER BY " + query["order by"].(string)
-		delete(query, "order by")
-	}
-
-	cols, findicies := s.analysisType(table, valueOf)
-	qs, qp := s.buildMapQuery(query)
-
-	querystring := fmt.Sprintf("SELECT %s FROM %s %s @@@ %s", cols, table, qs, orderby)
-	return s.allocXP(valueOf, parname, pars, findicies, querystring, qp, limit)
-}
-
-func (s *Query) allocXP(v reflect.Value, parname string, pars []interface{}, findicies []int, querystring string, qp []interface{}, limit int) error {
-	val := v //reflect.MakeSlice(v.Type(), 0, 1)
-	for _, par := range pars {
-		qssplit := strings.Split(querystring, "@@@")
-		qs := qssplit[0] + " AND " + parname + "=?" + qssplit[1]
-		cqp := append(qp, par)
-		iter := s.Session.Query(qs, cqp...).Iter()
-		ps := reflect.MakeSlice(val.Type(), 1, 1)
-		t := val.Type().Elem().Elem()
-		for limit > 0 {
-			pnewele := reflect.New(t)
-			data := make([]interface{}, 0, len(findicies))
-			sfis := make(map[int]*[]byte)
-			sfises := make(map[int]*[][]byte) // slice of struct fields indexs
-			for _, i := range findicies {
-				ele := buildPlaceHolder(i, pnewele.Elem(), sfis, sfises)
-				data = append(data, ele)
-			}
-
-			if !iter.Scan(data...) {
-				break
-			}
-
-			marshalTo(pnewele.Elem(), sfis, sfises)
-			ps.Index(0).Set(pnewele)
-			val = reflect.AppendSlice(val, ps)
-			limit--
-		}
-		v.Set(val)
-		if err := iter.Close(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func containString(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
 }
