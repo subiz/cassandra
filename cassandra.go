@@ -7,111 +7,29 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/gocql/gocql"
+	"github.com/subiz/header"
 	"google.golang.org/protobuf/proto"
 )
 
 func (me *Query) Connect(seeds []string, keyspace string) error {
 	me.keyspace = keyspace
 	me.table = new(sync.Map)
-	cluster := gocql.NewCluster(seeds...)
-	cluster.Timeout = 30 * time.Second
-	cluster.ConnectTimeout = 30 * time.Second
-	cluster.Keyspace = "system_schema"
-	var defaultSession *gocql.Session
-	var err error
-	for {
-		if defaultSession, err = cluster.CreateSession(); err == nil {
-			break
-		}
-		fmt.Println("cassandra", err, ". Retring after 5sec...")
-		time.Sleep(5 * time.Second)
-	}
 
-	fmt.Println("CONNECTED TO ", seeds)
-
-	defer func() {
-		defaultSession.Close()
-	}()
-
-	if err = me.loadTables(defaultSession, keyspace); err != nil {
+	session := header.ConnectDB(seeds, keyspace)
+	if err := me.loadTables(session, keyspace); err != nil {
 		return err
 	}
 
-	cluster.Keyspace = keyspace
-	me.Session, err = cluster.CreateSession()
-	return err
+	me.Session = session
+	return nil
 }
 
 type Query struct {
 	keyspace string
 	Session  *gocql.Session
 	table    *sync.Map
-}
-
-func (s *Query) extractFields(query string) []string {
-	fs := make([]string, 0)
-	columns := strings.Split(query, "\n")
-
-	for _, col := range columns {
-		colSplit := strings.Split(col, " ")
-		f := strings.TrimSpace(colSplit[0])
-		if f == "PRIMARY" || f == "" {
-			continue
-		}
-		fs = append(fs, f)
-	}
-	return fs
-}
-
-func (s *Query) CreateTable(table string, query string, option ...string) error {
-	var o string
-	if len(option) > 0 {
-		o = option[0]
-	}
-	s.table.Store(table, s.extractFields(query))
-
-	return s.Session.Query(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (%s)%s`,
-		table, query, o)).Exec()
-}
-
-func (s *Query) Delete(table string, query interface{}) error {
-	qs, qp, err := s.buildQuery(query)
-	if err != nil {
-		return err
-	}
-	if qs == "" {
-		return nil
-	}
-	//	qs = " WHERE " + qs
-	querystring := fmt.Sprintf("DELETE FROM %s %s", table, qs)
-	return s.Session.Query(querystring, qp...).Exec()
-}
-
-func CreateKeyspace(seeds []string, keyspace string, repfactor int) error {
-	cluster := gocql.NewCluster(seeds...)
-	cluster.Timeout = 30 * time.Second
-	cluster.ConnectTimeout = 30 * time.Second
-	cluster.Keyspace = "system_schema"
-	var defaultSession *gocql.Session
-	var err error
-	for {
-		if defaultSession, err = cluster.CreateSession(); err == nil {
-			break
-		}
-		fmt.Println("cassandra", err, ". Retring after 5sec...")
-		time.Sleep(5 * time.Second)
-	}
-	fmt.Println("CONNECTED TO ", seeds)
-	defer defaultSession.Close()
-
-	return defaultSession.Query(fmt.Sprintf(
-		`CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {
-		'class': 'SimpleStrategy',
-		'replication_factor': %d
-	}`, keyspace, repfactor)).Exec()
 }
 
 func (s *Query) loadTables(ss *gocql.Session, keyspace string) error {
@@ -165,83 +83,6 @@ func (s *Query) Upsert(table string, p interface{}) error {
 		}
 
 		if reflect.DeepEqual(vf.Interface(), reflect.Zero(vf.Type()).Interface()) {
-			continue
-		}
-
-		columns = append(columns, jsonname)
-		phs = append(phs, "?")
-
-		if vf.Type().Kind() == reflect.Slice && vf.Type().Elem().Kind() == reflect.Ptr {
-			bs := make([][]byte, 0, vf.Len())
-			for i := 0; i < vf.Len(); i++ {
-				b, err := proto.Marshal(vf.Index(i).Interface().(proto.Message))
-				if err != nil {
-					return err
-				}
-				bs = append(bs, b)
-			}
-			data = append(data, bs)
-		} else if vf.Type().Kind() == reflect.Ptr && vf.Type().Elem().Kind() == reflect.Struct {
-			b, err := proto.Marshal(vf.Interface().(proto.Message))
-			if err != nil {
-				return err
-			}
-			data = append(data, b)
-		} else {
-			data = append(data, vf.Interface())
-		}
-	}
-
-	querystring := fmt.Sprintf("INSERT INTO %s(%s) VALUES (%s)", table, strings.Join(columns, ","), strings.Join(phs, ","))
-	return s.Session.Query(querystring, data...).Exec()
-}
-
-func (s *Query) Upsertf(table string, p interface{}, jsonnames []string) error {
-	if len(jsonnames) == 0 {
-		return s.Upsert(table, p)
-	}
-	columns := make([]string, 0)
-	phs := make([]string, 0) // place holders
-	data := make([]interface{}, 0)
-
-	var valueOf reflect.Value
-	var typeOf reflect.Type
-	if reflect.TypeOf(p).Kind() == reflect.Ptr {
-		valueOf, typeOf = reflect.ValueOf(p).Elem(), reflect.TypeOf(p).Elem()
-	} else {
-		valueOf, typeOf = reflect.ValueOf(p), reflect.TypeOf(p)
-	}
-
-	jsonnamem := make(map[string]struct{})
-	for _, name := range jsonnames {
-		jsonnamem[name] = struct{}{}
-	}
-	for i := 0; i < valueOf.NumField(); i++ {
-		vf := valueOf.Field(i)
-		tf := typeOf.Field(i)
-
-		jsonname := strings.Split(tf.Tag.Get("json"), ",")[0]
-		if jsonname == "-" {
-			continue
-		}
-
-		if _, has := jsonnamem[jsonname]; !has {
-			continue
-		}
-
-		// only consider field which defined in table
-		if tbfields, ok := s.table.Load(table); ok {
-			if !containString(tbfields.([]string), "\""+jsonname+"\"") && !containString(tbfields.([]string), jsonname) {
-				continue
-			}
-		}
-
-		if isReservedKeyword(jsonname) {
-			jsonname = "\"" + jsonname + "\""
-		}
-
-		// don't want zero value but bool
-		if tf.Type != reflect.TypeOf(true) && reflect.DeepEqual(vf.Interface(), reflect.Zero(vf.Type()).Interface()) {
 			continue
 		}
 
@@ -424,21 +265,6 @@ func (s *Query) buildBatchQuery(query map[string]interface{}) (string, []interfa
 		return "", nil
 	}
 	return " WHERE " + qs, qp
-}
-
-func (s Query) DropKeyspace() error {
-	querystring := "DROP KEYSPACE IF EXISTS " + s.keyspace
-	return s.Session.Query(querystring).Exec()
-}
-
-func (s Query) DropView(view string) error {
-	querystring := "DROP MATERIALIZED VIEW IF EXISTS " + view
-	return s.Session.Query(querystring).Exec()
-}
-
-func (s Query) DropTable(table string) error {
-	querystring := "DROP TABLE IF EXISTS " + table
-	return s.Session.Query(querystring).Exec()
 }
 
 func (s *Query) alloc(v reflect.Value, findicies []int, querystring string, qp []interface{}) error {
